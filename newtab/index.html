@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body class="newtab-page">
+  <div class="ntp">
+    <header class="topbar">
+      <div class="top-right">
+        <a class="top-link" href="https://mail.google.com" target="_blank" rel="noopener">Gmail</a>
+        <a class="top-link" href="https://images.google.com" target="_blank" rel="noopener">Images</a>
+        <button id="appsBtn" class="icon-btn" title="Google apps" aria-label="Google apps">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="5" r="2"></circle>
+            <circle cx="12" cy="5" r="2"></circle>
+            <circle cx="19" cy="5" r="2"></circle>
+            <circle cx="5" cy="12" r="2"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+            <circle cx="19" cy="12" r="2"></circle>
+            <circle cx="5" cy="19" r="2"></circle>
+            <circle cx="12" cy="19" r="2"></circle>
+            <circle cx="19" cy="19" r="2"></circle>
+          </svg>
+        </button>
+        <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.33 1.82 2 2 0 1 1-3.33 0 1.65 1.65 0 0 0-.33-1.82 1.65 1.65 0 0 0-1-.6 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1.82-.33 2 2 0 1 1 0-3.33 1.65 1.65 0 0 0 1.82-.33 1.65 1.65 0 0 0 .6-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .33-1.82 2 2 0 1 1 3.33 0 1.65 1.65 0 0 0 .33 1.82 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.23.3.37.66.4 1.04"></path>
+          </svg>
+        </button>
+        <button id="avatarBtn" class="avatar" title="Not signed in" aria-label="Profile">U</button>
+      </div>
+    </header>
+
+    <div id="editBanner" class="edit-banner hidden" role="status">
+      <span class="edit-banner-text">Editing shortcuts — drag to reorder, click X to remove</span>
+      <button id="editBannerDone" class="btn primary">Done</button>
+    </div>
+
+    <div class="layout">
+      <button id="arxivToggle" class="panel-toggle panel-toggle-left" title="arXiv papers" aria-label="Toggle arXiv panel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <span class="panel-toggle-label">arXiv</span>
+      </button>
+      <aside class="arxiv-panel collapsed" aria-label="arXiv updates">
+        <div class="panel-header">
+          <div class="panel-title">arXiv Latest</div>
+          <div id="arxivSubtitle" class="panel-subtitle">cs.AI</div>
+        </div>
+        <div class="panel-filter">
+          <input id="arxivFilterInput" type="text" placeholder="Filter: term1 AND term2; use quotes and parentheses" aria-label="Filter arXiv papers" />
+          <select id="arxivFilterMode" class="filter-mode" aria-label="Filter mode">
+            <option value="any">OR</option>
+            <option value="all">AND</option>
+          </select>
+          <button id="arxivFilterHelpBtn" class="btn secondary" type="button">Syntax</button>
+          <button id="arxivFilterClear" class="btn secondary">Clear</button>
+        </div>
+        <div id="arxivFilterHelp" class="panel-help hidden">
+          Examples: ("structured pruning" OR pruning) AND ("edge ai" OR "on-device")
+          · Use AND/OR, quotes for phrases, parentheses for groups
+        </div>
+        <div id="arxivStatus" class="panel-status">Loading latest papers...</div>
+        <div id="arxivList" class="panel-list" role="list"></div>
+      </aside>
+
+      <main class="main">
+        <div class="logo" aria-label="Google">
+          <span class="b">G</span><span class="r">o</span><span class="y">o</span><span class="b">g</span><span class="g">l</span><span class="r">e</span>
+        </div>
+        <div class="search">
+          <span class="search-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="7"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </span>
+          <div class="search-engine-picker" id="searchEnginePicker">
+            <button class="search-engine-trigger" id="searchEngineTrigger" type="button" aria-label="Search provider" aria-haspopup="listbox">
+              <span class="search-engine-label" id="searchEngineLabel">Google</span>
+              <svg class="search-engine-arrow" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="search-engine-dropdown hidden" id="searchEngineDropdown" role="listbox"></div>
+          </div>
+          <input id="searchInput" type="text" placeholder="Search Google or type a URL" autocomplete="off" autofocus aria-label="Search" />
+        </div>
+
+        <div id="launchpad" class="shortcuts"></div>
+
+        <section class="scour-section" aria-label="Scour feed">
+          <div class="scour-header">
+            <div class="scour-title">Scour</div>
+            <a class="scour-link" href="https://scour.ing/@dtjgp" target="_blank" rel="noopener">Open</a>
+          </div>
+          <div id="scourStatus" class="scour-status">Loading...</div>
+          <div id="scourList" class="scour-list" role="list"></div>
+        </section>
+      </main>
+
+      <button id="favoriteToggle" class="panel-toggle panel-toggle-right" title="Favorite links" aria-label="Toggle favorite panel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        <span class="panel-toggle-label">Links</span>
+      </button>
+      <aside class="favorite-panel collapsed" aria-label="Favorite projects">
+        <div class="panel-header">
+          <div class="panel-title">Favorite Links</div>
+          <a class="panel-link" href="https://github.com/guanguans/favorite-link" target="_blank" rel="noopener">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
+        </div>
+        <div id="favoriteStatus" class="panel-status">Loading...</div>
+        <div id="favoriteList" class="panel-list" role="list"></div>
+      </aside>
+    </div>
+
+    <div id="addForm" class="add-form hidden">
+      <div class="add-form-inner">
+        <div class="add-title">Add shortcut</div>
+        <input type="text" id="siteName" placeholder="Name" aria-label="Shortcut name" />
+        <input type="url" id="siteUrl" placeholder="URL" aria-label="Shortcut URL" />
+        <div class="form-actions">
+          <button id="cancelBtn" class="btn secondary">Cancel</button>
+          <button id="saveBtn" class="btn primary">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="appsMenu" class="apps-menu hidden" role="menu">
+      <div id="appsTrack" class="apps-track" role="presentation"></div>
+    </div>
+    <div id="accountMenu" class="account-menu hidden" role="menu"></div>
+
+    <div id="settingsPanel" class="settings-panel hidden" role="dialog" aria-modal="true">
+      <div class="settings-card">
+        <div class="settings-header">
+          <div class="settings-title">Settings</div>
+          <button id="settingsCloseBtn" class="icon-btn" aria-label="Close settings">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="settings-tabs" role="tablist">
+          <button class="settings-tab active" data-tab="general" role="tab" aria-selected="true">General</button>
+          <button class="settings-tab" data-tab="menus" role="tab" aria-selected="false">Apps & Account</button>
+          <button class="settings-tab" data-tab="arxiv" role="tab" aria-selected="false">arXiv</button>
+        </div>
+
+        <div class="settings-tab-content active" data-tab-content="general">
+          <div class="settings-section">
+            <div class="settings-label">Theme</div>
+            <div class="theme-switcher" id="themeSwitcher">
+              <button class="theme-option active" data-theme="auto" title="Follow system">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                Auto
+              </button>
+              <button class="theme-option" data-theme="light" title="Light mode">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                Light
+              </button>
+              <button class="theme-option" data-theme="dark" title="Dark mode">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                Dark
+              </button>
+            </div>
+          </div>
+          <div class="settings-section">
+            <div class="settings-label">Custom avatar URL</div>
+            <input id="avatarUrlInput" type="url" placeholder="https://..." aria-label="Custom avatar URL" />
+          </div>
+        </div>
+
+        <div class="settings-tab-content" data-tab-content="menus">
+          <div class="settings-section">
+            <div class="settings-label">Apps menu items</div>
+            <div id="appsList" class="settings-list"></div>
+            <div class="settings-add">
+              <input id="appNameInput" type="text" placeholder="Name" aria-label="App name" />
+              <input id="appUrlInput" type="url" placeholder="URL" aria-label="App URL" />
+              <button id="addAppBtn" class="btn secondary">Add</button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-label">Account menu items</div>
+            <div id="accountList" class="settings-list"></div>
+            <div class="settings-add">
+              <input id="accountNameInput" type="text" placeholder="Name" aria-label="Account name" />
+              <input id="accountUrlInput" type="url" placeholder="URL" aria-label="Account URL" />
+              <button id="addAccountBtn" class="btn secondary">Add</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-tab-content" data-tab-content="arxiv">
+          <div class="settings-section">
+            <div class="settings-label">arXiv feed</div>
+            <select id="arxivCategorySelect" class="settings-select" multiple size="5" aria-label="arXiv categories">
+              <option value="cs.AI">cs.AI</option>
+              <option value="cs.LG">cs.LG</option>
+              <option value="stat.ML">stat.ML</option>
+              <option value="cs.CV">cs.CV</option>
+              <option value="cs.CL">cs.CL</option>
+              <option value="cs.RO">cs.RO</option>
+              <option value="cs.IT">cs.IT</option>
+              <option value="cs.NI">cs.NI</option>
+              <option value="eess.SP">eess.SP</option>
+              <option value="eess.SY">eess.SY</option>
+            </select>
+            <div id="arxivGroupList" class="settings-groups"></div>
+            <div class="settings-chips">
+              <button class="chip" data-category="cs.AI">cs.AI</button>
+              <button class="chip" data-category="cs.LG">cs.LG</button>
+              <button class="chip" data-category="stat.ML">stat.ML</button>
+              <button class="chip" data-category="cs.CV">cs.CV</button>
+              <button class="chip" data-category="cs.CL">cs.CL</button>
+              <button class="chip" data-category="cs.RO">cs.RO</button>
+              <button class="chip" data-category="cs.IT">cs.IT</button>
+              <button class="chip" data-category="cs.NI">cs.NI</button>
+              <button class="chip" data-category="eess.SP">eess.SP</button>
+              <button class="chip" data-category="eess.SY">eess.SY</button>
+            </div>
+            <div class="settings-add settings-inline">
+              <input id="arxivCategoryInput" type="text" placeholder="Custom categories (comma-separated)" aria-label="Custom arXiv categories" />
+              <button id="arxivRefreshBtn" class="btn secondary">Refresh</button>
+            </div>
+            <div class="settings-custom-groups">
+              <div class="settings-label">Custom groups</div>
+              <div id="arxivCustomGroupList" class="settings-list"></div>
+              <div class="settings-add">
+                <input id="arxivGroupNameInput" type="text" placeholder="Group name" aria-label="Group name" />
+                <input id="arxivGroupCategoriesInput" type="text" placeholder="Categories (e.g., cs.NI, cs.IT)" aria-label="Group categories" />
+                <button id="addArxivGroupBtn" class="btn secondary">Add</button>
+                <button id="cancelArxivGroupBtn" class="btn secondary hidden">Cancel</button>
+              </div>
+            </div>
+            <div class="settings-add settings-inline">
+              <input id="arxivRefreshInput" type="number" min="0" step="5" placeholder="Auto refresh (minutes, 0=off)" aria-label="Auto refresh interval in minutes" />
+              <button id="arxivApplyRefreshBtn" class="btn secondary">Apply</button>
+            </div>
+            <div class="settings-help">Uses arXiv RSS for the specified category. Auto refresh runs while this tab is open.</div>
+          </div>
+        </div>
+
+        <div class="settings-status" id="settingsStatus"></div>
+      </div>
+    </div>
+  </div>
+  <script src="../shared.js"></script>
+  <script src="newtab.js"></script>
+</body>
+</html>

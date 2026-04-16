@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "LaunchPad",
+  "version": "1.0.0",
+  "description": "A customizable launchpad for quick access to your favorite sites",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/Gemini_Generated_Image_fgcx8wfgcx8wfgcx.png",
+      "48": "icons/Gemini_Generated_Image_fgcx8wfgcx8wfgcx.png",
+      "128": "icons/Gemini_Generated_Image_fgcx8wfgcx8wfgcx.png"
+    }
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab/index.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*/*"
+  ],
+  "icons": {
+    "16": "icons/Gemini_Generated_Image_fgcx8wfgcx8wfgcx.png",
+    "48": "icons/Gemini_Generated_Image_fgcx8wfgcx8wfgcx.png",
+    "128": "icons/Gemini_Generated_Image_fgcx8wfgcx8wfgcx.png"
+  }
+}
