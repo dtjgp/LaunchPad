@@ -1,0 +1,11 @@
+{
+  "source": "icons/Gemini_Generated_Image_fgcx8wfgcx8wfgcx.png",
+  "sourceSha256": "e5cf22e57634d5710b17c5e65b8ab0b7ef3ab0974d273c146d0bfcfbf82778f3",
+  "method": "Chromium image rendering, object-fit: contain, no crop, transparent padding",
+  "generated": {
+    "icon16.png": "e6f43edde479880d628322ac7ea2143e6506bc4320dbce963d73146cb3379142",
+    "icon32.png": "959336b49925f960a20d1a5d87949c2e9dc36094c4b9cd67c0cdf503d76f7a34",
+    "icon48.png": "ec2be2a9a1a8f6a0b8151248544384f8fa44dd15918ec066b25697323436d013",
+    "icon128.png": "a4fc026f318c20007232a46936525374ce2d76bdce38ee736f58bcbaf46f0ee3"
+  }
+}

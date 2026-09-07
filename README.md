@@ -1,78 +1,96 @@
-# LaunchPad Chrome Extension
+# LaunchPad
 
-A customizable new-tab and popup launchpad with search, curated feeds, and quick shortcuts.
+A Google-style research start page for Chrome. Search or open a URL, keep your shortcuts close, and scan arXiv, Scour and academic GitHub projects from one place.
 
-## Features
+![LaunchPad new tab with public research feeds connected](docs/images/newtab-light.png)
 
-- 🚀 Popup shortcuts with edit mode, add/remove, and drag-reorder
-- 🧭 Google-style new tab with search + provider selector
-- 🖱️ Right-click shortcuts to edit name/URL or delete
-- 🧩 Google Apps-style menu with editable items and drag ordering
-- 👤 Account menu + custom avatar URL
-- 📰 arXiv panel: multi-category RSS, keyword filtering, custom groups, optional auto-refresh
-- 🧵 Scour feed panel with interest tags, previews, and lazy-load pagination
-- 💾 Persistent settings (Chrome storage local + sync, with localStorage stale-while-revalidate cache)
-- 🎨 Favicon tiles with fallback initials and color accents
+## Install
 
-## Installation
+Download a ZIP from [GitHub Releases](https://github.com/dtjgp/LaunchPad/releases), extract it into a permanent folder, and load that folder with **Load unpacked** in `chrome://extensions` (Developer mode enabled). Open a new tab or pin LaunchPad to use its popup.
 
-1. Open `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select the `LaunchPad` folder
+See [INSTALL.md](INSTALL.md) for full installation, update and removal instructions. Chrome 114 or newer is required; current stable Chrome is recommended. Running the extension needs no Node.js, API key or LaunchPad account.
 
-## Usage
+## What it does
 
-### Popup
+- **Search and launch**: Google-only queries, direct HTTP(S)/local URLs, browser voice input when available, and Google Lens.
+- **Shortcuts**: add, edit, remove and drag to reorder in the popup and new tab. Hover or focus a tile to find its More menu; right-click also works.
+- **arXiv Radar**: four research tracks combine RSS categories and text filters. Advanced filters support phrases, AND/OR and grouped expressions, with clear syntax errors and saved views.
+- **Scour Inbox**: connect a public profile in Settings. A new installation has no personal feed configured. Source changes do not reuse another profile's cached items.
+- **Academic GitHub**: research-profile ranking over OSS Insight's seven-day candidate pool and GitHub Search fallbacks. The displayed source/window/coverage describe which data was actually available.
+- **Themes and layout**: light, dark and system modes, adjustable research-panel visibility, responsive layouts and keyboard-accessible controls.
 
-- Click the LaunchPad icon to open the popup launchpad
-- Click the pencil icon to enter edit mode
-- Click the X to remove a shortcut
-- Drag to reorder in edit mode
-- Right-click a shortcut to edit name/URL or delete
-- Click "Add" to add a new shortcut
+The research tracks cover Edge AI/model compression, communication systems, energy systems and VLA/research agents. Keyword matches and ranking scores help discovery; they do not assess paper quality. GitHub stars are total counts, not seven-day star growth.
 
-### New Tab
+## Daily use
 
-- New tabs open the custom LaunchPad page
-- Use the search bar and provider selector (Google/Gemini/Perplexity/Claude/ChatGPT)
-- The arXiv panel shows the latest RSS items for selected categories
-- The Scour panel pulls the latest items from `https://scour.ing/@dtjgp`
+| Action | How |
+|---|---|
+| Focus search | `Ctrl+K` / `⌘K` |
+| Search or open the typed address | `Enter` |
+| Close a dialog/menu or return to search | `Escape` |
+| Edit a shortcut | More → Edit, or right-click |
+| Reorder shortcuts | More → Edit shortcuts, then drag; use the pencil button in the popup |
+| Show/hide research panels | arXiv / Trend controls at the top |
+| Configure sources and appearance | Settings |
 
-### Settings
+The account button opens configurable links to Google account pages. LaunchPad does not read your Google profile or sign-in status. You can optionally supply an HTTPS avatar image.
 
-Open Settings (gear icon) to configure:
+### Filter examples
 
-- Custom avatar URL
-- Apps menu items
-- Account menu items
-- arXiv categories, custom groups, and auto-refresh interval
+```text
+pruning OR quantization
+("edge ai" OR "on-device") AND inference
+energy AND (pricing OR "demand response")
+```
 
-### arXiv Filter Syntax
+Terms use case-insensitive text matching against title and abstract. AND takes precedence over OR. Quotes group phrases; parentheses group expressions. Comma or `&` means AND; semicolon or `|` means OR. The OR/AND selector controls the operator between adjacent terms. Invalid expressions are not applied or saved; the last valid view stays visible.
 
-- Use AND/OR, quotes for phrases, and parentheses for groups
-- Example: ("structured pruning" OR pruning) AND ("edge ai" OR "on-device")
+## Reliability and privacy
 
-## Data and Requests
+Settings are written locally before Chrome sync. Unrelated changes from another window are preserved; conflicting edits are reported. Feed status distinguishes cached results, partial updates, empty matches and failures. If a source is unavailable, retry or open its page directly.
 
-- Settings are stored in Chrome storage (local + sync) with a localStorage cache for resilience
-- External requests:
-  - `https://export.arxiv.org/rss/*` for arXiv feeds
-  - `https://scour.ing/@dtjgp` (HTML) for Scour feed — parsed via `[data-item="post"]` SSR markup
-  - `https://scour.ing/*` for article previews
-  - `https://www.google.com/s2/favicons` for favicons
-  - Search providers as selected
+Article previews request permission for the selected HTTPS origin. A redirecting page, login-only page or JavaScript-only article may need to be opened directly. Microphone availability and speech processing depend on your browser and its provider; Lens opens Google's website.
 
-## Project Layout
+Read [PRIVACY.md](PRIVACY.md) for storage, external requests, voice input and permission controls, and [SECURITY.md](SECURITY.md) for reporting security issues.
 
-- `manifest.json` - Extension manifest (MV3)
-- `popup.html`, `popup.js`, `styles.css` - Popup UI
-- `newtab/index.html`, `newtab/newtab.js`, `newtab/newtab.css` - New tab UI
-- `background.js` - Service worker used to fetch RSS/feed content
-- `icons/` - Extension icons
-- `reference/` - Screenshot references
+## Develop and verify
 
-## Dev Notes
+Use Node.js 20+ (CI uses 22):
 
-- `FORCE_RESET` flags in `popup.js` and `newtab/newtab.js` can reset storage to defaults
-- The background service worker proxies feed requests via `chrome.runtime.onMessage`
+```sh
+npm ci
+npx playwright install chromium
+npm run check
+npm test
+npm run test:ui
+npm run build
+npm run verify:package
+```
+
+Browser regressions use disposable Chromium extension profiles with real extension storage and controlled feed fixtures. Accessibility checks use axe-core. Real source checks are separate; automated tests do not prove microphone transcription, native permission-consent UI or external data quality.
+
+The release ZIP uses an explicit runtime/legal file allowlist. It includes no npm dependencies, test fixtures or local audit traces. Build output and local test evidence are ignored by Git.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [release instructions](docs/RELEASING.md), [CHANGELOG.md](CHANGELOG.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Project structure
+
+| Files | Responsibility |
+|---|---|
+| `manifest.json`, `background.js` | Extension entry points, permissions and bounded source requests |
+| `core.js`, `shared.js`, `design-tokens.css` | URL/settings validation, persistence, shared presentation and themes |
+| `filter-query.js`, `arxiv-research.js`, `academic-trend.js` | Filter syntax, research presets and discovery ranking |
+| `newtab/`, `popup.html`, `popup.js`, `styles.css` | Browser interfaces |
+| `tests/`, `scripts/`, `.github/workflows/` | Verification and release packaging |
+
+## Troubleshooting
+
+- **The new tab has not changed after an update**: reload the extension and open a fresh tab. Update files in the same permanent folder to preserve an unpacked extension's identity.
+- **No Scour items**: configure a public profile URL and check its source page. Login-only content is not a supported feed.
+- **GitHub/arXiv shows cached or partial data**: a source may be unavailable or rate-limited. The label describes the available evidence; retry later.
+- **A save fails**: input remains available. Fix the displayed validation/storage problem and retry. If another window changed the same setting, reload the page before saving again.
+- **A preview fails**: check the requested site permission or open the article directly. Redirects are rejected for preview requests.
+
+For a bug report, include browser/OS, release version, reproduction steps and a screenshot with personal information removed. Do not attach full storage dumps or private URLs.
+
+LaunchPad is available under the [MIT License](LICENSE). Third-party assets retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

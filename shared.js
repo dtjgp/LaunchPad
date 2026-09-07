@@ -13,6 +13,59 @@ function safeColor(color) {
   return /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : '#e8eaed';
 }
 
+// Shared presentation roles and brand assets; no account data is read here.
+function applyLaunchPadTheme(mode) {
+  document.documentElement.classList.toggle('theme-light', mode === 'light');
+  document.documentElement.classList.toggle('theme-dark', mode === 'dark');
+}
+
+const GOOGLE_SITE_ICONS = {
+  'mail.google.com': 'https://www.gstatic.com/images/branding/product/1x/gmail_2020q4_32dp.png',
+  'docs.google.com': 'https://www.gstatic.com/images/branding/product/1x/docs_2020q4_32dp.png',
+  'drive.google.com': 'https://www.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png',
+  'calendar.google.com': 'https://www.gstatic.com/images/branding/product/1x/calendar_2020q4_32dp.png'
+};
+
+function getSiteIconUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    return GOOGLE_SITE_ICONS[hostname] ||
+      `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=64`;
+  } catch {
+    return '';
+  }
+}
+
+function createSiteIcon(url, name) {
+  const image = document.createElement('img');
+  image.alt = '';
+  image.width = 24;
+  image.height = 24;
+  image.loading = 'lazy';
+  image.src = getSiteIconUrl(url);
+  image.addEventListener('error', () => {
+    const initial = document.createElement('span');
+    initial.className = 'icon-initial';
+    initial.textContent = String(name || '?').slice(0, 1).toUpperCase();
+    image.replaceWith(initial);
+  }, { once: true });
+  return image;
+}
+
+function showShortcutValidation(result) {
+  for (const [field, message] of Object.entries(result.errors)) {
+    const input = document.getElementById(field === 'name' ? 'siteName' : 'siteUrl');
+    const error = document.getElementById(field === 'name' ? 'siteNameError' : 'siteUrlError');
+    input.setAttribute('aria-invalid', message ? 'true' : 'false');
+    error.textContent = message;
+  }
+}
+
+function clearShortcutValidation() {
+  showShortcutValidation({ errors: { name: '', url: '' } });
+  document.getElementById('shortcutFormStatus').textContent = '';
+}
+
 const defaultSites = [
   { name: 'Google', url: 'https://google.com', color: '#4285f4' },
   { name: 'GitHub', url: 'https://github.com', color: '#24292e' },
