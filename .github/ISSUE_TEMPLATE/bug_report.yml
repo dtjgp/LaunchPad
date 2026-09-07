@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible LaunchPad problem
+body:
+  - type: markdown
+    attributes:
+      value: 'Please redact personal URLs, account details and credentials. For security issues, read SECURITY.md first.'
+  - type: input
+    id: version
+    attributes:
+      label: LaunchPad version
+      description: Find it on the extension card in chrome://extensions.
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Chrome version and operating system
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include the visible error and optionally a redacted screenshot. Do not attach storage dumps.
+    validations:
+      required: true

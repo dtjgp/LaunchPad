@@ -1,3 +1,15 @@
 .alma-snapshots/
+.playwright-mcp/
 .DS_Store
 *.log
+node_modules/
+test-results/
+playwright-report/
+
+# Local audit evidence and generated distribution files
+output/
+dist/
+.env
+.env.*
+*.pem
+*.crx

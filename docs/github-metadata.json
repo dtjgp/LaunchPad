@@ -1,0 +1,10 @@
+{
+  "description": "Google-style research start page for Chrome with shortcuts, arXiv filters, configurable Scour feeds and academic GitHub discovery.",
+  "topics": [
+    "chrome-extension",
+    "new-tab",
+    "arxiv",
+    "research-tools",
+    "material-design"
+  ]
+}
