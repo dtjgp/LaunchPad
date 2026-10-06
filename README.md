@@ -81,6 +81,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), [release instructions](docs/RELEASING.md
 | `manifest.json`, `background.js` | Extension entry points, permissions and bounded source requests |
 | `core.js`, `shared.js`, `design-tokens.css` | URL/settings validation, persistence, shared presentation and themes |
 | `filter-query.js`, `arxiv-research.js`, `academic-trend.js` | Filter syntax, research presets and discovery ranking |
+| `newtab/search.js` | New tab search box: Google routing, AI Mode, voice input and opt-in suggestions |
 | `newtab/`, `popup.html`, `popup.js`, `styles.css` | Browser interfaces |
 | `tests/`, `scripts/`, `.github/workflows/` | Verification and release packaging |
 

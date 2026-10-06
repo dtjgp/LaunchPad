@@ -70,6 +70,10 @@
   --accent: var(--primary);
   --accent-text: var(--on-primary);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
+  /* Chrome new tab shortcut tiles, shared by the new tab and the popup. */
+  --ntp-tile-icon-bg: #f1f3f4;
+  --ntp-tile-hover: rgba(32, 33, 36, 0.1);
+  --ntp-tile-title: #3c4043;
 }
 
 :root.theme-light { color-scheme: light; }
@@ -96,6 +100,9 @@
   --green-subtle: #173e2b;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --ntp-tile-icon-bg: var(--surface-strong);
+  --ntp-tile-hover: rgba(255, 255, 255, 0.1);
+  --ntp-tile-title: var(--on-surface);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -121,6 +128,9 @@
     --green-subtle: #173e2b;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --ntp-tile-icon-bg: var(--surface-strong);
+    --ntp-tile-hover: rgba(255, 255, 255, 0.1);
+    --ntp-tile-title: var(--on-surface);
   }
 }
 

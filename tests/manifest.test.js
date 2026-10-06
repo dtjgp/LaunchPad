@@ -32,6 +32,7 @@ test('runtime pages load the shared core module', () => {
   assert.match(newtab, /<script src="\.\.\/core\.js"><\/script>/);
   assert.match(newtab, /<script src="\.\.\/arxiv-research\.js"><\/script>/);
   assert.match(newtab, /<script src="\.\.\/academic-trend\.js"><\/script>/);
+  assert.match(newtab, /<script src="search\.js"><\/script>\s*<script src="newtab\.js"><\/script>/);
   assert.match(background, /importScripts\(['"]core\.js['"]\)/);
 });
 

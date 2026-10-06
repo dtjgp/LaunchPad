@@ -8,23 +8,6 @@
   --shortcut-cell-width: 112px;
   --shortcut-cell-height: 112px;
   --shortcut-grid-gap: 0px;
-  --ntp-tile-icon-bg: #f1f3f4;
-  --ntp-tile-hover: rgba(32, 33, 36, 0.1);
-  --ntp-tile-title: #3c4043;
-}
-
-:root.theme-dark {
-  --ntp-tile-icon-bg: var(--surface-strong);
-  --ntp-tile-hover: rgba(255, 255, 255, 0.1);
-  --ntp-tile-title: var(--on-surface);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.theme-light) {
-    --ntp-tile-icon-bg: var(--surface-strong);
-    --ntp-tile-hover: rgba(255, 255, 255, 0.1);
-    --ntp-tile-title: var(--on-surface);
-  }
 }
 
 * {

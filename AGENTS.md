@@ -17,7 +17,7 @@ arXiv 检索过滤、Scour 收藏与学术趋势，以及 Google 查询、URL �
 |---|---|
 | 扩展入口与权限 | `manifest.json`；必需权限和 `optional_host_permissions` 分开核对 |
 | 跨域请求代理 | `background.js` 的 runtime message handler；`core.js` 的 URL／请求校验 |
-| Google 查询与 URL 直达 | `core.js`：`resolveGoogleSearchTarget()`；`newtab/newtab.js`：`navigateFromGoogleSearch()` |
+| Google 查询、URL 直达、AI Mode 与搜索建议 | `core.js`：`resolveGoogleSearchTarget()`、`parseGoogleSuggestions()`；`newtab/search.js`：`createNewTabSearch()` |
 | 持久化 | `core.js`：`STORAGE_KEYS`、`saveSettings()`、`createSettingsWriter()`；`newtab/newtab.js`：`readStoredSettings()`、`saveSettingsFields()` |
 | 默认站点与共享显示辅助 | `shared.js`：`defaultSites`、`escapeHtml()`、`safeColor()`；popup 与 new tab 复用 |
 | 快捷方式渲染与拖拽 | `popup.js`、`newtab/newtab.js`：`render()`、`reorder()`、拖拽事件 |

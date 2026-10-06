@@ -67,7 +67,7 @@ body.newtab {
 .launchpad {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 0;
   margin-bottom: 16px;
 }
 
@@ -99,8 +99,9 @@ body.newtab {
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 0;
   padding: 0;
-  border-radius: var(--radius-md);
+  border-radius: 4px;
   cursor: pointer;
   transition: background var(--transition-base);
   text-decoration: none;
@@ -108,7 +109,7 @@ body.newtab {
 }
 
 .launch-item:hover {
-  background: var(--surface);
+  background: var(--ntp-tile-hover);
 }
 
 .drag-enabled .launch-item {
@@ -120,25 +121,35 @@ body.newtab {
   outline-offset: 4px;
 }
 
-.launch-item .icon {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
+/* Shortcut tiles match the new tab (Chromium most_visited.css). */
+.launch-item .icon,
+.add-btn .icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   font-size: 18px;
-  margin-bottom: 6px;
-  background: var(--surface-stronger);
+  background: var(--ntp-tile-icon-bg);
   color: var(--text);
 }
 
-.launch-item .name {
-  font-size: 11px;
-  color: var(--canvas-text);
+.launch-item .icon img { width: 24px; height: 24px; }
+
+.launch-item .name,
+.add-btn .name {
+  width: 100%;
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 16px;
   text-align: center;
-  word-break: break-word;
-  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ntp-tile-title);
 }
 
 .launch-item .delete-btn {
@@ -148,7 +159,7 @@ body.newtab {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #ff3b30;
+  background: #ea4335;
   color: white;
   border: none;
   cursor: pointer;
@@ -171,30 +182,24 @@ body.newtab {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0;
-  border: 2px dashed var(--border);
-  border-radius: var(--radius-md);
+  gap: 6px;
+  min-width: 0;
+  min-height: 112px;
+  padding: 16px 0 0;
+  border: 0;
+  border-radius: 4px;
   cursor: pointer;
-  color: var(--muted-text);
-  transition: border-color var(--transition-base), color var(--transition-base), background var(--transition-base);
+  transition: background var(--transition-base);
   background: transparent;
   font: inherit;
   width: 100%;
 }
 
 .add-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--ntp-tile-hover);
 }
 
-.add-btn .icon {
-  font-size: 20px;
-  margin-bottom: 6px;
-}
-
-.add-btn .name {
-  font-size: 11px;
-}
+.add-btn .material-icon { width: 24px; height: 24px; flex-basis: 24px; }
 
 .add-form {
   background: var(--surface);
@@ -278,9 +283,8 @@ body.newtab {
   font-size: 14px;
 }
 
-.launch-link { width: 100%; min-height: 94px; display: flex; flex-direction: column; align-items: center; padding: 10px 4px; text-decoration: none; color: inherit; border-radius: inherit; }
-.launch-item .name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: var(--label-medium-size); }
-.shortcut-more { position: absolute; top: 0; right: 0; width: 28px; height: 28px; padding: 4px; border: 0; border-radius: 50%; background: var(--surface); color: var(--muted); opacity: 0; cursor: pointer; }
+.launch-link { width: 100%; min-height: 112px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 0 0; text-decoration: none; color: inherit; border-radius: inherit; }
+.shortcut-more { position: absolute; top: 0; right: 0; width: 28px; height: 28px; padding: 4px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); opacity: 0; cursor: pointer; }
 .launch-item:hover .shortcut-more, .launch-item:focus-within .shortcut-more { opacity: 1; }
 .shortcut-more:hover { background: var(--surface-stronger); }
 .edit-mode .shortcut-more { display: none; }
