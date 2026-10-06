@@ -5,6 +5,10 @@
   }
   root.LaunchPadCore = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createLaunchPadCore() {
+  const GOOGLE_SUGGEST_HOST = 'www.google.com';
+  const GOOGLE_SUGGEST_ORIGIN = `https://${GOOGLE_SUGGEST_HOST}/*`;
+  const MAX_SUGGEST_QUERY_LENGTH = 512;
+  const MAX_SUGGESTIONS = 7;
   const FETCH_RULES = {
     fetchArxiv(url) {
       return url.hostname === 'export.arxiv.org' && url.pathname.startsWith('/rss/');
@@ -34,6 +38,14 @@
         Array.from(url.searchParams.keys()).every(key =>
           ['q', 'sort', 'order', 'per_page'].includes(key)
         );
+    },
+    fetchSuggest(url) {
+      const query = url.searchParams.get('q') || '';
+      return url.hostname === GOOGLE_SUGGEST_HOST && url.pathname === '/complete/search' &&
+        url.searchParams.get('client') === 'chrome' &&
+        url.searchParams.get('ie') === 'utf-8' && url.searchParams.get('oe') === 'utf-8' &&
+        query.trim().length > 0 && query.length <= MAX_SUGGEST_QUERY_LENGTH &&
+        Array.from(url.searchParams.keys()).every(key => ['client', 'ie', 'oe', 'q'].includes(key));
     },
     fetchPreview() {
       return true;
@@ -66,8 +78,7 @@
     if (!query) return '';
     if (getSearchInputError(query)) return '';
 
-    const googleSearchUrl = () =>
-      `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    const googleSearchUrl = () => buildGoogleSearchUrl(query);
 
     if (/^https?:\/\//i.test(query)) {
       return normalizeHttpUrl(query) || googleSearchUrl();
@@ -88,6 +99,55 @@
     }
 
     return googleSearchUrl();
+  }
+
+  function buildGoogleSearchUrl(query) {
+    return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  }
+
+  // Only text that may already leave the page as a search is sent for suggestions.
+  function buildGoogleSuggestUrl(value) {
+    const query = typeof value === 'string' ? value.trim() : '';
+    if (!query || query.length > MAX_SUGGEST_QUERY_LENGTH || getSearchInputError(query)) return '';
+    return `https://${GOOGLE_SUGGEST_HOST}/complete/search?client=chrome&ie=utf-8&oe=utf-8&q=${encodeURIComponent(query)}`;
+  }
+
+  // Parses the Chrome suggest format: [query, texts, descriptions, [], {google:suggesttype}].
+  // Invalid payloads throw so callers report a failure instead of "no suggestions".
+  function parseGoogleSuggestions(text, typedValue = '') {
+    const payload = JSON.parse(text);
+    if (!Array.isArray(payload) || typeof payload[0] !== 'string' || !Array.isArray(payload[1])) {
+      throw new Error('Invalid suggestion response');
+    }
+    const descriptions = Array.isArray(payload[2]) ? payload[2] : [];
+    const types = Array.isArray(payload[4]?.['google:suggesttype']) ? payload[4]['google:suggesttype'] : [];
+    const typed = typeof typedValue === 'string' ? typedValue.trim().toLowerCase() : '';
+    const seen = new Set(typed ? [typed] : []);
+    const matches = [];
+    payload[1].forEach((entry, index) => {
+      if (typeof entry !== 'string' || !entry.trim() || entry.length > 2048 || matches.length >= MAX_SUGGESTIONS) return;
+      const key = entry.trim().toLowerCase();
+      if (seen.has(key)) return;
+      if (types[index] === 'NAVIGATION') {
+        const url = normalizeHttpUrl(entry);
+        if (!url) return;
+        const description = typeof descriptions[index] === 'string' ? descriptions[index].trim().slice(0, 300) : '';
+        matches.push({ kind: 'navigation', text: entry.trim(), description, url });
+      } else {
+        matches.push({ kind: 'query', text: entry.trim(), description: '', url: buildGoogleSearchUrl(entry.trim()) });
+      }
+      seen.add(key);
+    });
+    return matches;
+  }
+
+  // AI Mode treats every input, including a URL, as a question for Google.
+  function resolveGoogleAiModeTarget(value) {
+    const query = typeof value === 'string' ? value.trim() : '';
+    if (getSearchInputError(query)) return '';
+    return query
+      ? `https://www.google.com/search?udm=50&q=${encodeURIComponent(query)}`
+      : 'https://www.google.com/search?udm=50';
   }
 
   function getSearchInputError(value) {
@@ -173,7 +233,7 @@
   const SETTING_KEYS = [
     'sites', 'appLinks', 'accountLinks', 'avatarUrl', 'scourUrl', 'arxivCategory',
     'arxivCategories', 'arxivRefreshMinutes', 'arxivCustomGroups', 'arxivFilter',
-    'arxivFilterMode', 'arxivSavedFilters', 'themeMode', 'panelVisibility'
+    'arxivFilterMode', 'arxivSavedFilters', 'themeMode', 'panelVisibility', 'searchSuggestions'
   ];
   const STORAGE_KEYS = [...SETTING_KEYS, 'settingsUpdatedAt', 'settingsFieldUpdatedAt'];
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -230,6 +290,7 @@
       else if (key === 'arxivFilter' && (typeof value !== 'string' || value.length > 4096)) return 'Use a filter up to 4096 characters.';
       else if (key === 'arxivSavedFilters' && (!Array.isArray(value) || value.length > 12 || value.some(item => !item || typeof item.label !== 'string' || !item.label.trim() || item.label.length > 32 || typeof item.query !== 'string' || !item.query.trim() || item.query.length > 4096 || !['any', 'all'].includes(item.mode)))) return 'Use up to 12 valid saved filters.';
       else if (key === 'arxivCustomGroups' && (!Array.isArray(value) || value.length > 32 || value.some(item => !item || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 80 || validateSettingsPatch({ arxivCategories: item.categories })))) return 'Use up to 32 named groups with valid categories.';
+      else if (key === 'searchSuggestions' && typeof value !== 'boolean') return 'Invalid search suggestion setting.';
       else if (key === 'panelVisibility' && (!value || Array.isArray(value) || typeof value.arxiv !== 'boolean' || typeof value.favorites !== 'boolean')) return 'Invalid panel visibility.';
     }
     return '';
@@ -333,6 +394,11 @@
   return {
     normalizeHttpUrl,
     resolveGoogleSearchTarget,
+    resolveGoogleAiModeTarget,
+    buildGoogleSearchUrl,
+    buildGoogleSuggestUrl,
+    parseGoogleSuggestions,
+    GOOGLE_SUGGEST_ORIGIN,
     getSearchInputError,
     resolveAvatarUrl,
     saveSettings,

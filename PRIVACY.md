@@ -4,7 +4,7 @@ LaunchPad is a browser extension that runs locally. It has no LaunchPad account 
 
 ## What is stored
 
-- Shortcuts, app/account links, theme, optional avatar URL, arXiv categories and filters, Scour profile URL and panel preferences are stored in Chrome extension storage.
+- Shortcuts, app/account links, theme, optional avatar URL, arXiv categories and filters, Scour profile URL, panel preferences and the search-suggestion switch are stored in Chrome extension storage.
 - Settings are written locally first, then to Chrome's sync area. Chrome decides whether that area is synchronized with your signed-in browsers. Sync failure is shown without discarding the successful local save.
 - Feed caches are kept in extension-page local storage. They are tied to their source/category where relevant. Scour preview data is kept in memory for the current page.
 - A bounded local diagnostic log records source/storage failures. It is not uploaded to the developer.
@@ -15,7 +15,9 @@ Avoid putting secrets in shortcut, profile or avatar URLs. Extension settings ar
 
 Opening a new tab can contact arXiv, OSS Insight and GitHub for research content. Scour is contacted after a profile is connected. Site favicons and Google product icons are requested to identify shortcuts; this exposes the relevant hostname to the icon service. A custom avatar URL is contacted only when configured.
 
-Using the search box navigates to Google or the address you entered. An address containing an embedded username or password is rejected locally and is not forwarded to Google. Voice search uses the browser's speech-recognition implementation, which may process audio through its provider. LaunchPad does not itself record, store or upload an audio file. Google Lens opens Google's website.
+Using the search box navigates to Google or the address you entered. An address containing an embedded username or password is rejected locally and is not forwarded to Google. Voice search uses the browser's speech-recognition implementation, which may process audio through its provider. LaunchPad does not itself record, store or upload an audio file. Google Lens opens Google's website. The AI Mode button opens Google AI Mode with the text in the search box.
+
+Google search suggestions are off by default. When you switch them on in Settings, Chrome asks for access to `www.google.com`. While they are on, the text you type in the LaunchPad search box is sent to Google's suggestion service after a short pause, without cookies and without a referring page. Addresses with an embedded username or password are never sent. Switching suggestions off removes that site access. Chrome's own address bar is separate and follows Chrome's settings.
 
 Article previews request an optional permission for the selected HTTPS origin. Preview fetches omit credentials and do not follow redirects. Normal feed requests use the browser's same-origin credential policy. Previews may display an image supplied by the article metadata; that request can contact the image host. Preview requests/images suppress the referring page URL.
 
@@ -25,7 +27,7 @@ These services receive normal network information, including your IP address, an
 
 - `storage`: save settings locally and in Chrome's sync area.
 - Required source host permissions: arXiv, Scour, OSS Insight and GitHub endpoints.
-- Optional HTTPS host permissions: requested for individual preview origins after you select Preview.
+- Optional HTTPS host permissions: requested for individual preview origins after you select Preview, and for `www.google.com` only when you switch on search suggestions.
 
 You can disconnect Scour by clearing its profile field, remove the custom avatar URL, or manage extension site access in Chrome's extension details. Disable the extension to stop new-tab behavior. Removing the extension clears its local extension storage; Chrome-managed sync/site data follow Chrome's own settings.
 

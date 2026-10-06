@@ -12,7 +12,7 @@ See [INSTALL.md](INSTALL.md) for full installation, update and removal instructi
 
 ## What it does
 
-- **Search and launch**: Google-only queries, direct HTTP(S)/local URLs, browser voice input when available, and Google Lens.
+- **Search and launch**: a search box styled like Chrome's new tab page, with Google-only queries, direct HTTP(S)/local URLs, browser voice input when available, Google Lens and an AI Mode button. Optional Google suggestions (off by default) appear in a Chrome-style dropdown.
 - **Shortcuts**: add, edit, remove and drag to reorder in the popup and new tab. Hover or focus a tile to find its More menu; right-click also works.
 - **arXiv Radar**: four research tracks combine RSS categories and text filters. Advanced filters support phrases, AND/OR and grouped expressions, with clear syntax errors and saved views.
 - **Scour Inbox**: connect a public profile in Settings. A new installation has no personal feed configured. Source changes do not reuse another profile's cached items.
@@ -27,6 +27,7 @@ The research tracks cover Edge AI/model compression, communication systems, ener
 |---|---|
 | Focus search | `Ctrl+K` / `⌘K` |
 | Search or open the typed address | `Enter` |
+| Choose a suggestion (when enabled) | `↑` / `↓`, then `Enter` |
 | Close a dialog/menu or return to search | `Escape` |
 | Edit a shortcut | More → Edit, or right-click |
 | Reorder shortcuts | More → Edit shortcuts, then drag; use the pencil button in the popup |

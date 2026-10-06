@@ -245,6 +245,93 @@ test('Google query, direct URL, voice result and Lens keep their navigation targ
   await openNewTab(page, extensionId);
   await page.locator('#googleLensLink').click();
   await expect(page).toHaveURL('https://lens.google.com/');
+  await openNewTab(page, extensionId);
+  await page.locator('#searchInput').fill('compare structured pruning methods');
+  await page.locator('#aiModeBtn').click();
+  await expect(page).toHaveURL('https://www.google.com/search?udm=50&q=compare%20structured%20pruning%20methods');
+});
+
+test('Google suggestions stay off until the user grants only www.google.com', async ({ page, worker, extensionId }) => {
+  // Chrome's consent prompt is outside this test; stub the grant and record the requested scope.
+  await page.addInitScript(() => {
+    chrome.permissions.contains = async () => true;
+    chrome.permissions.request = async request => { window.requestedOrigins = request.origins; return true; };
+  });
+  await worker.evaluate(() => { chrome.permissions.contains = async () => true; });
+  await openNewTab(page, extensionId);
+  await page.locator('#searchInput').fill('edge');
+  await page.waitForTimeout(400);
+  await expect(page.locator('#searchSuggestions')).toBeHidden();
+
+  await page.locator('#settingsBtn').click();
+  await page.locator('#searchSuggestionsToggle').check();
+  expect(await page.evaluate(() => window.requestedOrigins)).toEqual(['https://www.google.com/*']);
+  await expect.poll(() => page.evaluate(async () => (await chrome.storage.local.get('searchSuggestions')).searchSuggestions))
+    .toBe(true);
+  await page.locator('#settingsCloseBtn').click();
+
+  await page.locator('#searchInput').fill('edge ai');
+  const options = page.locator('#searchSuggestions [role="option"]');
+  await expect(options).toHaveCount(4);
+  await expect(page.locator('#searchInput')).toHaveAttribute('aria-expanded', 'true');
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(options.nth(2)).toContainText('edge ai <img src=x onerror="window.injected=1">');
+  expect(await page.evaluate(() => window.injected)).toBeUndefined();
+  await expect(options.nth(3)).toContainText('[Test fixture] Lab page');
+  await expect(options.nth(3)).toContainText('example.org/fixture-lab');
+  await expect(options.nth(3)).not.toContainText('https://');
+  await page.keyboard.press('ArrowDown');
+  await page.screenshot({ path: path.join(output, 'search-suggestions-light.png') });
+  await page.keyboard.press('ArrowUp');
+
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#searchInput')).toHaveValue('edge ai research');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#searchSuggestions')).toBeHidden();
+  await expect(page.locator('#searchInput')).toHaveValue('edge ai');
+  await expect(page.locator('#searchInput')).toBeFocused();
+
+  await page.context().route(/^https:\/\/(www\.google\.com|example\.org)\//,
+    route => route.fulfill({ contentType: 'text/html', body: '<title>Navigation test destination</title>' }));
+  await page.locator('#searchInput').fill('edge ai');
+  await expect(options).toHaveCount(4);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL('https://www.google.com/search?q=edge%20ai%20research');
+
+  await openNewTab(page, extensionId);
+  await page.locator('#searchInput').fill('lab');
+  await page.locator('#searchSuggestions [role="option"]').nth(3).click();
+  await expect(page).toHaveURL('https://example.org/fixture-lab');
+});
+
+test('a synced suggestion setting without local permission sends nothing, and failures stay visible', async ({ page, worker, extensionId }) => {
+  await worker.evaluate(() => {
+    globalThis.suggestRequests = 0;
+    const original = globalThis.fetch;
+    globalThis.fetch = async (value, options) => {
+      if (new URL(value).pathname === '/complete/search') globalThis.suggestRequests += 1;
+      return original(value, options);
+    };
+  });
+  await worker.evaluate(() => chrome.storage.local.set({ searchSuggestions: true }));
+  await openNewTab(page, extensionId);
+  await page.locator('#searchInput').fill('edge');
+  await page.waitForTimeout(400);
+  await expect(page.locator('#searchSuggestions')).toBeHidden();
+  expect(await worker.evaluate(() => globalThis.suggestRequests)).toBe(0);
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#searchSuggestionsToggle')).not.toBeChecked();
+  await expect(page.locator('#searchSuggestionsState')).toContainText('allow access on this device');
+  await page.locator('#settingsCloseBtn').click();
+
+  await worker.evaluate(() => { chrome.permissions.contains = async () => true; fixtureMode = 'failed'; });
+  await page.addInitScript(() => { chrome.permissions.contains = async () => true; });
+  await page.reload();
+  await expect(page.locator('#launchpad > .shortcut')).toHaveCount(17);
+  await page.locator('#searchInput').fill('edge');
+  await expect(page.locator('#searchStatus')).toContainText('suggestions are unavailable');
+  await expect(page.locator('#searchSuggestions')).toBeHidden();
 });
 
 test('preview permission denial remains visible and requests only the selected origin', async ({ page, extensionId }) => {
