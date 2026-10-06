@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'newtab/index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'newtab/newtab.css'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'newtab/newtab.js'), 'utf8');
+const searchJs = fs.readFileSync(path.join(root, 'newtab/search.js'), 'utf8');
 
 test('arXiv and GitHub use the same panel and card primitives', () => {
   assert.match(html, /id="arxivPanel"[^>]*class="[^"]*research-panel/);
@@ -65,13 +66,13 @@ test('LaunchPad owns the masthead while search is a Google-only native-style lau
   assert.match(html, /id="voiceSearchBtn"[^>]*aria-label="Search by voice"/);
   assert.match(html, /id="googleLensLink"[^>]*href="https:\/\/lens\.google\.com\/"/);
   assert.doesNotMatch(html, /searchEnginePicker|searchEngineTrigger|searchEngineDropdown/);
-  assert.doesNotMatch(js, /SEARCH_ENGINES|searchEngine\b|gemini\.google|perplexity\.ai|claude\.ai|chatgpt\.com/);
-  assert.match(js, /resolveGoogleSearchTarget\(searchInput\.value\)/);
+  assert.doesNotMatch(js + searchJs, /SEARCH_ENGINES|searchEngine\b|gemini\.google|perplexity\.ai|claude\.ai|chatgpt\.com/);
+  assert.match(searchJs, /resolveGoogleSearchTarget\(searchInput\.value\)/);
   assert.match(css, /\.search-action\s*\{/);
   assert.match(css, /\.search\s*\{[^}]*flex-shrink:\s*0;/);
   assert.match(css, /\.search\s*\{[^}]*height:\s*56px;[^}]*border-radius:\s*28px;/);
   assert.match(html, /id="aiModeBtn"[^>]*aria-label="Ask in Google AI Mode"/);
-  assert.match(js, /resolveGoogleAiModeTarget\(searchInput\.value\)/);
+  assert.match(searchJs, /resolveGoogleAiModeTarget\(searchInput\.value\)/);
   assert.match(css, /@media \(max-width: 600px\)[\s\S]*?\.ai-mode-label\s*\{\s*display:\s*none;/);
   assert.match(css, /@keyframes brand-enter/);
 });

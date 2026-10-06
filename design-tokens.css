@@ -37,15 +37,18 @@
   --on-primary: #ffffff;
   --primary-container: #d3e3fd;
   --on-primary-container: #0842a0;
-  --bg: #f4f6f9;
+  /* Neutral roles follow Chrome's default new tab page (Chromium sys/ref color
+     mixers): page = kColorSysBase, panels = a neutral container, text = on-surface. */
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-muted: #f8fafd;
-  --surface-strong: #eef2f7;
-  --surface-stronger: #e2e8f0;
+  --surface-muted: #faf9f8;
+  --surface-strong: #efeded;
+  --surface-stronger: #e3e3e3;
+  --panel-bg: #f2f2f2;
   --on-surface: #1f1f1f;
-  --on-surface-variant: #526071;
-  --outline: #747f8e;
-  --outline-variant: #dce3ed;
+  --on-surface-variant: #474747;
+  --outline: #757575;
+  --outline-variant: #e3e3e3;
   --primary-hover: #0842a0;
   --primary-subtle: #e8f0fe;
   --error: #b3261e;
@@ -70,6 +73,10 @@
   --accent: var(--primary);
   --accent-text: var(--on-primary);
   --focus-ring: 0 0 0 3px var(--primary-subtle);
+  /* Chrome new tab shortcut tiles, shared by the new tab and the popup. */
+  --ntp-tile-icon-bg: #f1f3f4;
+  --ntp-tile-hover: rgba(32, 33, 36, 0.1);
+  --ntp-tile-title: #3c4043;
 }
 
 :root.theme-light { color-scheme: light; }
@@ -79,15 +86,16 @@
   --on-primary: #062e6f;
   --primary-container: #0842a0;
   --on-primary-container: #d3e3fd;
-  --bg: #111827;
-  --surface: #182132;
-  --surface-muted: #111a2a;
-  --surface-strong: #202b3d;
-  --surface-stronger: #2a364b;
-  --on-surface: #e5edf8;
-  --on-surface-variant: #b0bdd0;
-  --outline: #8996a9;
-  --outline-variant: #354257;
+  --bg: #3c3c3c;
+  --surface: #3c3c3c;
+  --surface-muted: #303030;
+  --surface-strong: #474747;
+  --surface-stronger: #5e5e5e;
+  --panel-bg: #282828;
+  --on-surface: #e3e3e3;
+  --on-surface-variant: #c7c7c7;
+  --outline: #8f8f8f;
+  --outline-variant: #474747;
   --primary-hover: #c2d8fb;
   --primary-subtle: #263953;
   --error: #ffb4ab;
@@ -96,6 +104,9 @@
   --green-subtle: #173e2b;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --ntp-tile-icon-bg: var(--surface-strong);
+  --ntp-tile-hover: rgba(255, 255, 255, 0.1);
+  --ntp-tile-title: var(--on-surface);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -104,15 +115,16 @@
     --on-primary: #062e6f;
     --primary-container: #0842a0;
     --on-primary-container: #d3e3fd;
-    --bg: #111827;
-    --surface: #182132;
-    --surface-muted: #111a2a;
-    --surface-strong: #202b3d;
-    --surface-stronger: #2a364b;
-    --on-surface: #e5edf8;
-    --on-surface-variant: #b0bdd0;
-    --outline: #8996a9;
-    --outline-variant: #354257;
+    --bg: #3c3c3c;
+    --surface: #3c3c3c;
+    --surface-muted: #303030;
+    --surface-strong: #474747;
+    --surface-stronger: #5e5e5e;
+    --panel-bg: #282828;
+    --on-surface: #e3e3e3;
+    --on-surface-variant: #c7c7c7;
+    --outline: #8f8f8f;
+    --outline-variant: #474747;
     --primary-hover: #c2d8fb;
     --primary-subtle: #263953;
     --error: #ffb4ab;
@@ -121,6 +133,9 @@
     --green-subtle: #173e2b;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
     --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --ntp-tile-icon-bg: var(--surface-strong);
+    --ntp-tile-hover: rgba(255, 255, 255, 0.1);
+    --ntp-tile-title: var(--on-surface);
   }
 }
 

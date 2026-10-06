@@ -114,7 +114,7 @@ for (const mode of ['failed', 'empty', 'partial']) {
       await page.locator('#arxivStatus').getByRole('button', { name: 'Retry' }).click();
       await expect(page.locator('#arxivList .research-card').first()).toBeVisible();
     } else if (mode === 'empty') {
-      await expect(page.locator('#arxivStatus')).toContainText('No papers');
+      await expect(page.locator('#arxivStatus')).toContainText('No new papers in the latest arXiv update');
       await expect(page.locator('#scourStatus')).toContainText('No readable items');
     } else {
       await expect(page.locator('#arxivStatus')).toContainText('Partial update');
@@ -137,6 +137,49 @@ test('cached papers stay visible when refresh fails and zero-match filters offer
   await expect(page.locator('#arxivList .research-card')).toHaveCount(0);
   await page.getByRole('button', { name: 'Clear filter', exact: true }).click();
   await expect(page.locator('#arxivList .research-card').first()).toBeVisible();
+});
+
+test('an empty arXiv update keeps cached papers instead of clearing the panel', async ({ page, worker, extensionId }) => {
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#arxivStatus')).toContainText('Updated');
+  const count = await page.locator('#arxivList .research-card').count();
+  await worker.evaluate(() => { globalThis.fixtureMode = 'empty'; });
+  await page.reload();
+  await expect(page.locator('#arxivStatus')).toContainText('No new papers in the latest arXiv update · showing');
+  await expect(page.locator('#arxivList .research-card')).toHaveCount(count);
+  // The cache entry survives the empty update.
+  await page.reload();
+  await expect(page.locator('#arxivList .research-card')).toHaveCount(count);
+});
+
+test('a Scour browser check is reported as blocked, not as an empty feed', async ({ page, worker, extensionId }) => {
+  await worker.evaluate(() => { globalThis.fixtureMode = 'scour-gate'; });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#scourStatus')).toContainText('Scour requires a browser check.');
+  await expect(page.locator('#scourStatus')).not.toContainText('No readable items');
+  await expect(page.locator('#scourList')).toContainText('cannot read this feed');
+  await expect(page.locator('#scourList').getByRole('link', { name: 'Open Scour' })).toHaveAttribute('href', 'https://scour.ing/@fixture');
+
+  await worker.evaluate(() => { globalThis.fixtureMode = 'populated'; });
+  await page.reload();
+  await expect(page.locator('#scourList .research-card')).toHaveCount(10);
+  await worker.evaluate(() => { globalThis.fixtureMode = 'scour-gate'; });
+  await page.reload();
+  await expect(page.locator('#scourStatus')).toContainText('Using cached data · 12 items · Scour requires a browser check');
+  await expect(page.locator('#scourList .research-card').first()).toBeVisible();
+});
+
+test('shortcut icons come from Chrome\'s local favicon cache, with a letter when it has none', async ({ page, context, extensionId }) => {
+  const remoteIconRequests = [];
+  context.on('request', request => { if (/s2\/favicons/.test(request.url())) remoteIconRequests.push(request.url()); });
+  await openNewTab(page, extensionId);
+  // A cached icon is drawn as-is; this disposable profile has none, so tiles fall back to letters.
+  expect(await page.evaluate(() => getSiteIconUrl('https://github.com/'))).toBe(
+    `chrome-extension://${extensionId}/_favicon/?pageUrl=https%3A%2F%2Fgithub.com%2F&size=32`);
+  await expect(page.locator('#launchpad > .shortcut').nth(1).locator('.icon-initial')).toHaveText('G');
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await expect(page.locator('.launch-item').nth(1).locator('.icon-initial')).toHaveText('G');
+  expect(remoteIconRequests).toEqual([]);
 });
 
 test('manual and system themes use accessible foreground pairs and propagate to popup', async ({ page, extensionId }) => {

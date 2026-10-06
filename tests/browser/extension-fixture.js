@@ -24,6 +24,12 @@ const test = base.extend({
       globalThis.fetch = async value => {
         const url = new URL(value);
         if (fixtureMode === 'failed') throw new Error('Fixture: network unavailable');
+        if (fixtureMode === 'scour-gate' && url.hostname.endsWith('scour.ing')) {
+          // Shape of Scour's proof-of-work gate page (Oct 2026), reduced to its markers.
+          return new Response('<!DOCTYPE html><html><head><meta name="pow-worker-url" content="/static/js/pow-solve-worker.js">' +
+            '<title>Just a moment… · Scour</title></head><body><h1>Just a moment…</h1>' +
+            '<p id="gate-status" role="status">Checking your browser before continuing.</p></body></html>');
+        }
         if (fixtureMode === 'invalid') return new Response(url.hostname === 'export.arxiv.org'
           ? '<html>Source maintenance</html>' : '{"message":"Source maintenance"}');
         if (fixtureMode === 'partial' && url.hostname === 'export.arxiv.org' && url.pathname.endsWith('cs.CV')) {

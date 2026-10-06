@@ -13,7 +13,7 @@ Avoid putting secrets in shortcut, profile or avatar URLs. Extension settings ar
 
 ## Requests to other services
 
-Opening a new tab can contact arXiv, OSS Insight and GitHub for research content. Scour is contacted after a profile is connected. Site favicons and Google product icons are requested to identify shortcuts; this exposes the relevant hostname to the icon service. A custom avatar URL is contacted only when configured.
+Opening a new tab can contact arXiv, OSS Insight and GitHub for research content. Scour is contacted after a profile is connected. Shortcut and suggestion icons are read from Chrome's local favicon cache, so no icon request leaves your device; sites Chrome has no icon for show their first letter. Google product icons (Gmail, Docs, Drive, Calendar and the apps menu) are loaded from Google's `gstatic.com`. A custom avatar URL is contacted only when configured.
 
 Using the search box navigates to Google or the address you entered. An address containing an embedded username or password is rejected locally and is not forwarded to Google. Voice search uses the browser's speech-recognition implementation, which may process audio through its provider. LaunchPad does not itself record, store or upload an audio file. Google Lens opens Google's website. The AI Mode button opens Google AI Mode with the text in the search box.
 
@@ -26,6 +26,7 @@ These services receive normal network information, including your IP address, an
 ## Permissions and control
 
 - `storage`: save settings locally and in Chrome's sync area.
+- `favicon`: read site icons from Chrome's local favicon cache. Chrome may describe it as "Read the icons of the websites you visit"; LaunchPad requests only the icons of your shortcuts and suggestions.
 - Required source host permissions: arXiv, Scour, OSS Insight and GitHub endpoints.
 - Optional HTTPS host permissions: requested for individual preview origins after you select Preview, and for `www.google.com` only when you switch on search suggestions.
 

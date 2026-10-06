@@ -32,6 +32,7 @@ test('runtime pages load the shared core module', () => {
   assert.match(newtab, /<script src="\.\.\/core\.js"><\/script>/);
   assert.match(newtab, /<script src="\.\.\/arxiv-research\.js"><\/script>/);
   assert.match(newtab, /<script src="\.\.\/academic-trend\.js"><\/script>/);
+  assert.match(newtab, /<script src="search\.js"><\/script>\s*<script src="newtab\.js"><\/script>/);
   assert.match(background, /importScripts\(['"]core\.js['"]\)/);
 });
 
@@ -46,6 +47,8 @@ test('manifest grants only the feed hosts used by the background worker', () => 
   );
   assert.equal(manifest.host_permissions.includes('https://raw.githubusercontent.com/*'), false);
   assert.equal(manifest.host_permissions.includes('https://www.google.com/*'), false);
+  // Shortcut icons use Chrome's local favicon cache instead of a remote icon service.
+  assert.deepEqual(manifest.permissions, ['storage', 'favicon']);
 });
 
 test('new tab replaces the editorial panel with Academic GitHub Trend', () => {

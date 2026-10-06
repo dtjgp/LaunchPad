@@ -4,7 +4,8 @@ const path = require('node:path');
 const runtimeFiles = [
   'manifest.json', 'background.js', 'core.js', 'filter-query.js', 'shared.js',
   'academic-trend.js', 'arxiv-research.js', 'design-tokens.css', 'styles.css',
-  'popup.html', 'popup.js', 'newtab/index.html', 'newtab/newtab.css', 'newtab/newtab.js'
+  'popup.html', 'popup.js', 'newtab/index.html', 'newtab/newtab.css', 'newtab/newtab.js',
+  'newtab/search.js'
 ];
 
 function collectReleaseFiles(root, { includeLegal = true } = {}) {

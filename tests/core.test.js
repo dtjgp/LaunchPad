@@ -8,6 +8,7 @@ const {
   buildGoogleSuggestUrl,
   parseGoogleSuggestions,
   validateSettingsPatch,
+  isScourBrowserCheck,
   getSearchInputError,
   resolveAvatarUrl,
   saveSettings,
@@ -86,6 +87,16 @@ test('parseGoogleSuggestions keeps query and navigation matches and rejects malf
   assert.equal(parseGoogleSuggestions(many, 'a').length, 7);
   assert.throws(() => parseGoogleSuggestions('<html>', 'a'));
   assert.throws(() => parseGoogleSuggestions('{"q":1}', 'a'), /Invalid suggestion response/);
+});
+
+test('isScourBrowserCheck recognizes the proof-of-work gate but not a feed page', () => {
+  const gate = '<!DOCTYPE html><html><head><meta name="pow-worker-url" content="/static/js/pow-solve-worker.js?v=1">' +
+    '<title>Just a moment… · Scour</title></head><body><p id="gate-status" role="status">Checking your browser</p></body></html>';
+  assert.equal(isScourBrowserCheck(gate), true);
+  assert.equal(isScourBrowserCheck('<title>Just a moment… · Scour</title>'), true);
+  assert.equal(isScourBrowserCheck('<html><title>@name · Scour</title><article data-item="post"></article></html>'), false);
+  assert.equal(isScourBrowserCheck('<rss><channel><title>Just a moment of science</title></channel></rss>'), false);
+  assert.equal(isScourBrowserCheck(undefined), false);
 });
 
 test('searchSuggestions is a boolean setting', () => {

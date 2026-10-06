@@ -1,7 +1,6 @@
 const launchpad = document.getElementById('launchpad');
 const layout = document.querySelector('.layout');
 const addForm = document.getElementById('addForm');
-const editModeBtn = document.getElementById('editModeBtn'); // may be null (removed from topbar)
 const siteNameInput = document.getElementById('siteName');
 const siteUrlInput = document.getElementById('siteUrl');
 const cancelBtn = document.getElementById('cancelBtn');
@@ -15,11 +14,6 @@ const appsMenu = document.getElementById('appsMenu');
 const appsTrack = document.getElementById('appsTrack');
 const avatarBtn = document.getElementById('avatarBtn');
 const accountMenu = document.getElementById('accountMenu');
-const googleSearchForm = document.getElementById('googleSearchForm');
-const searchInput = document.getElementById('searchInput');
-const voiceSearchBtn = document.getElementById('voiceSearchBtn');
-const searchStatus = document.getElementById('searchStatus');
-const searchSuggestions = document.getElementById('searchSuggestions');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
 const settingsCloseBtn = document.getElementById('settingsCloseBtn');
@@ -96,7 +90,6 @@ let settingsReturnFocus = null;
 let shortcutReturnFocus = null;
 let contextReturnFocus = null;
 let panelVisibility = { arxiv: true, favorites: true };
-let voiceRecognition = null;
 const scourPreviewCache = new Map();
 let scourItems = [];
 let scourRendered = 0;
@@ -110,9 +103,14 @@ let avatarRequestVersion = 0;
 
 const LOG_STORAGE_KEY = 'logs';
 const MAX_LOGS = 200;
-const GOOGLE_SEARCH_PLACEHOLDER = 'Search Google or type a URL';
 
 const STORAGE_KEYS = LaunchPadCore.STORAGE_KEYS;
+
+const search = createNewTabSearch({
+  logEvent,
+  flashSettingsSaved,
+  saveSearchSuggestions: () => saveSettingsFields(['searchSuggestions'], true)
+});
 
 const defaultArxivGroups = [
   { name: 'Machine Learning', categories: ['cs.LG', 'stat.ML'] },
@@ -362,7 +360,7 @@ async function init() {
       themeMode = themeCandidate;
     }
 
-    searchSuggestionsEnabled = storedValue('searchSuggestions') === true;
+    search.setSuggestionsEnabled(storedValue('searchSuggestions') === true);
 
     const savedPanels = storedValue('panelVisibility');
     for (const key of ['arxiv', 'favorites']) {
@@ -384,7 +382,7 @@ async function init() {
   applyArxivControls();
   setPanelOpen('arxiv', panelVisibility.arxiv);
   setPanelOpen('favorites', panelVisibility.favorites);
-  void refreshSuggestionPermission();
+  void search.refreshSuggestionPermission();
   loadArxivFeed();
   loadScourFeed();
   loadAcademicTrend();
@@ -481,7 +479,7 @@ function buildSettingsSnapshot() {
     arxivSavedFilters,
     themeMode,
     panelVisibility,
-    searchSuggestions: searchSuggestionsEnabled
+    searchSuggestions: search.suggestionsEnabled()
   };
 }
 
@@ -666,7 +664,7 @@ function updateThemeSwitcher() {
 function renderSettingsPanel() {
   if (avatarUrlInput.getAttribute('aria-invalid') !== 'true') avatarUrlInput.value = avatarUrl;
   document.getElementById('scourUrlInput').value = scourUrl;
-  renderSearchSuggestionSetting();
+  search.renderSuggestionSetting();
   updateThemeSwitcher();
   renderSettingsList(appsList, appLinks, 'app');
   renderSettingsList(accountList, accountLinks, 'account');
@@ -700,295 +698,6 @@ function applyArxivControls() {
   }
   renderArxivQuickFilters();
   setupArxivRefreshTimer();
-}
-
-function navigateFromGoogleSearch() {
-  const target = LaunchPadCore.resolveGoogleSearchTarget(searchInput.value);
-  if (target) {
-    window.location.href = target;
-  } else {
-    const error = LaunchPadCore.getSearchInputError(searchInput.value);
-    if (error) searchStatus.textContent = error;
-  }
-}
-
-// === Google search suggestions (opt-in; Chrome NTP dropdown behavior) ===
-const SUGGESTION_DEBOUNCE_MS = 120;
-const SUGGESTIONS_UNAVAILABLE = 'Google suggestions are unavailable right now. Search still works.';
-let searchSuggestionsEnabled = false;
-let suggestionPermission = false;
-let suggestionMatches = [];
-let suggestionIndex = -1;
-let suggestionTypedValue = '';
-let suggestionTimer = null;
-let suggestionRequestVersion = 0;
-
-function suggestionsActive() {
-  return searchSuggestionsEnabled && suggestionPermission;
-}
-
-function suggestionsOpen() {
-  return !searchSuggestions.hidden;
-}
-
-function closeSuggestions(restoreTyped = false) {
-  clearTimeout(suggestionTimer);
-  suggestionRequestVersion += 1;
-  if (restoreTyped && suggestionMatches.length) searchInput.value = suggestionTypedValue;
-  suggestionMatches = [];
-  suggestionIndex = -1;
-  searchSuggestions.hidden = true;
-  searchSuggestions.replaceChildren();
-  googleSearchForm.classList.remove('has-suggestions');
-  searchInput.setAttribute('aria-expanded', 'false');
-  searchInput.removeAttribute('aria-activedescendant');
-}
-
-function createVerbatimMatch(value) {
-  const url = LaunchPadCore.resolveGoogleSearchTarget(value);
-  const isSearch = url === LaunchPadCore.buildGoogleSearchUrl(value.trim());
-  return { kind: isSearch ? 'query' : 'navigation', text: value.trim(), description: '', url };
-}
-
-function appendSuggestionText(container, text, typed) {
-  // Like Chrome, the typed prefix stays regular and the completion is bold.
-  const prefix = typed && text.toLowerCase().startsWith(typed.toLowerCase()) ? text.slice(0, typed.length) : '';
-  if (prefix) container.append(prefix);
-  const rest = text.slice(prefix.length);
-  if (rest) {
-    const strong = document.createElement(prefix ? 'b' : 'span');
-    strong.textContent = rest;
-    container.append(strong);
-  }
-}
-
-// Chrome shows navigation matches without the scheme or a bare trailing slash.
-function formatSuggestionUrl(url) {
-  return url.replace(/^https?:\/\//, '').replace(/^([^/?#]+)\/$/, '$1');
-}
-
-function renderSuggestions() {
-  const typed = suggestionTypedValue.trim();
-  const options = suggestionMatches.map((match, index) => {
-    const option = document.createElement('div');
-    option.id = `searchSuggestion-${index}`;
-    option.className = `search-suggestion search-suggestion-${match.kind}`;
-    option.setAttribute('role', 'option');
-    option.setAttribute('aria-selected', index === suggestionIndex ? 'true' : 'false');
-    option.dataset.index = String(index);
-    const icon = document.createElement('span');
-    icon.className = 'search-suggestion-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    if (match.kind === 'query') {
-      icon.append(googleSearchForm.querySelector('.search-icon svg').cloneNode(true));
-    } else {
-      icon.append(createSiteIcon(match.url, match.text));
-    }
-    const text = document.createElement('span');
-    text.className = 'search-suggestion-text';
-    if (index === 0) text.textContent = match.text;
-    else if (match.kind === 'navigation') text.textContent = formatSuggestionUrl(match.url);
-    else appendSuggestionText(text, match.text, typed);
-    if (match.description) {
-      const description = document.createElement('span');
-      description.className = 'search-suggestion-description';
-      description.textContent = ` – ${match.description}`;
-      text.append(description);
-    }
-    option.append(icon, text);
-    return option;
-  });
-  searchSuggestions.replaceChildren(...options);
-  const open = options.length > 1;
-  searchSuggestions.hidden = !open;
-  googleSearchForm.classList.toggle('has-suggestions', open);
-  searchInput.setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (open && suggestionIndex >= 0) searchInput.setAttribute('aria-activedescendant', `searchSuggestion-${suggestionIndex}`);
-  else searchInput.removeAttribute('aria-activedescendant');
-}
-
-async function requestSuggestions(value) {
-  const url = LaunchPadCore.buildGoogleSuggestUrl(value);
-  if (!url) {
-    closeSuggestions();
-    return;
-  }
-  const version = ++suggestionRequestVersion;
-  let response;
-  try {
-    response = await chrome.runtime.sendMessage({ type: 'fetchSuggest', url });
-  } catch (error) {
-    response = { ok: false, error: error.message };
-  }
-  if (version !== suggestionRequestVersion || searchInput.value !== value) return;
-  try {
-    if (!response?.ok) throw new Error(response?.error || 'No response');
-    const matches = LaunchPadCore.parseGoogleSuggestions(response.text, value);
-    if (searchStatus.textContent === SUGGESTIONS_UNAVAILABLE) searchStatus.textContent = '';
-    suggestionTypedValue = value;
-    suggestionMatches = [createVerbatimMatch(value), ...matches];
-    suggestionIndex = 0;
-    renderSuggestions();
-  } catch (error) {
-    closeSuggestions();
-    if (!searchStatus.textContent) searchStatus.textContent = SUGGESTIONS_UNAVAILABLE;
-    void logEvent('warn', 'search suggestions failed', { message: error.message });
-  }
-}
-
-function scheduleSuggestions() {
-  clearTimeout(suggestionTimer);
-  const value = searchInput.value;
-  if (!suggestionsActive() || !value.trim() || voiceRecognition) {
-    closeSuggestions();
-    return;
-  }
-  suggestionTimer = setTimeout(() => { void requestSuggestions(value); }, SUGGESTION_DEBOUNCE_MS);
-}
-
-function moveSuggestionSelection(step) {
-  if (!suggestionsOpen()) return false;
-  const count = suggestionMatches.length;
-  suggestionIndex = (suggestionIndex + step + count) % count;
-  const match = suggestionMatches[suggestionIndex];
-  // Chrome previews the selected match in the input; Escape restores the typed text.
-  searchInput.value = suggestionIndex === 0 ? suggestionTypedValue : match.kind === 'query' ? match.text : match.url;
-  renderSuggestions();
-  return true;
-}
-
-function navigateToSuggestion(index) {
-  const match = suggestionMatches[index];
-  if (!match) return false;
-  if (index === 0) {
-    searchInput.value = suggestionTypedValue;
-    closeSuggestions();
-    navigateFromGoogleSearch();
-    return true;
-  }
-  closeSuggestions();
-  window.location.href = match.url;
-  return true;
-}
-
-async function refreshSuggestionPermission() {
-  try {
-    suggestionPermission = Boolean(await chrome.permissions?.contains({ origins: [LaunchPadCore.GOOGLE_SUGGEST_ORIGIN] }));
-  } catch {
-    suggestionPermission = false;
-  }
-  if (!suggestionsActive()) closeSuggestions();
-  renderSearchSuggestionSetting();
-}
-
-function renderSearchSuggestionSetting() {
-  const toggle = document.getElementById('searchSuggestionsToggle');
-  const state = document.getElementById('searchSuggestionsState');
-  if (!toggle || !state) return;
-  toggle.checked = suggestionsActive();
-  state.textContent = searchSuggestionsEnabled && !suggestionPermission
-    ? 'Turned on in synced settings. Switch it on here to allow access on this device.'
-    : '';
-}
-
-async function setSearchSuggestions(enabled) {
-  const origins = [LaunchPadCore.GOOGLE_SUGGEST_ORIGIN];
-  if (enabled) {
-    // Request first, inside the click task, so Chrome keeps the user gesture.
-    const granted = await chrome.permissions.request({ origins }).catch(() => false);
-    if (!granted) {
-      renderSearchSuggestionSetting();
-      flashSettingsSaved({ localOk: false, localError: 'Chrome did not allow access to www.google.com. Suggestions stay off.' });
-      return;
-    }
-    suggestionPermission = true;
-  } else {
-    closeSuggestions();
-    const removed = await chrome.permissions.remove({ origins }).catch(() => false);
-    if (removed) suggestionPermission = false;
-  }
-  const previous = searchSuggestionsEnabled;
-  searchSuggestionsEnabled = enabled;
-  const result = await saveSettingsFields(['searchSuggestions'], true);
-  if (!result.localOk) searchSuggestionsEnabled = previous;
-  renderSearchSuggestionSetting();
-}
-
-function navigateToGoogleAiMode() {
-  const target = LaunchPadCore.resolveGoogleAiModeTarget(searchInput.value);
-  if (target) {
-    window.location.href = target;
-  } else {
-    searchStatus.textContent = LaunchPadCore.getSearchInputError(searchInput.value);
-  }
-}
-
-function setVoiceSearchState(isListening, message = '') {
-  voiceSearchBtn?.classList.toggle('is-listening', isListening);
-  voiceSearchBtn?.setAttribute('aria-pressed', isListening ? 'true' : 'false');
-  searchInput.placeholder = isListening ? 'Listening…' : GOOGLE_SEARCH_PLACEHOLDER;
-  if (searchStatus) {
-    searchStatus.textContent = message;
-  }
-}
-
-function startVoiceSearch() {
-  if (voiceRecognition) {
-    voiceRecognition.stop();
-    return;
-  }
-
-  const SpeechRecognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    setVoiceSearchState(false, 'Voice search is not available in this browser.');
-    searchInput.focus();
-    return;
-  }
-
-  closeSuggestions();
-  const recognition = new SpeechRecognition();
-  let voiceMessage = '';
-  voiceRecognition = recognition;
-  recognition.lang = navigator.language || 'en-US';
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-  recognition.onstart = () => {
-    if (voiceRecognition === recognition) setVoiceSearchState(true, 'Listening for your search.');
-  };
-  recognition.onresult = event => {
-    if (voiceRecognition !== recognition) return;
-    const transcript = String(event.results?.[0]?.[0]?.transcript || '').trim();
-    if (!transcript) return;
-    searchInput.value = transcript;
-    voiceMessage = `Searching Google for ${transcript}.`;
-    setVoiceSearchState(false, voiceMessage);
-    navigateFromGoogleSearch();
-  };
-  recognition.onerror = event => {
-    if (voiceRecognition !== recognition) return;
-    const messages = {
-      'not-allowed': 'Allow microphone access in Chrome to use voice search.',
-      'service-not-allowed': 'Voice search is unavailable in this browser configuration. Type your query instead.',
-      'audio-capture': 'No microphone is available. Type your query instead.',
-      'network': 'The speech service could not be reached. Type your query or try again.',
-      'no-speech': 'No speech was detected. Try again or type your query.'
-    };
-    voiceMessage = messages[event.error] || 'Voice search could not finish. Try again or type your query.';
-    voiceRecognition = null;
-    setVoiceSearchState(false, voiceMessage);
-  };
-  recognition.onend = () => {
-    if (voiceRecognition !== recognition) return;
-    voiceRecognition = null;
-    setVoiceSearchState(false, voiceMessage || 'No speech was detected. Try again or type your query.');
-  };
-
-  try {
-    recognition.start();
-  } catch {
-    voiceRecognition = null;
-    setVoiceSearchState(false, 'Voice search could not start. Try again or type your query.');
-  }
 }
 
 function getAllArxivFilters() {
@@ -1283,16 +992,20 @@ async function loadArxivFeed() {
         merged.push(item);
     }
     if (merged.length === 0) {
-      if (coverage.kind === 'partial' && cached.length) {
-        arxivStatus.textContent = `Using cached data · ${coverage.rejected}/${coverage.total} categories failed`;
+      // arXiv RSS is empty on days without an announcement (weekends, holidays).
+      // An empty update keeps the cached papers and their cache entry.
+      if (cached.length) {
+        arxivStatus.textContent = coverage.kind === 'partial'
+          ? `Using cached data · ${coverage.rejected}/${coverage.total} categories failed`
+          : `No new papers in the latest arXiv update · showing ${cached.length} cached papers`;
       } else {
         arxivItems = [];
-        renderFeedEmpty(arxivList, 'No papers were returned for these categories.', {
+        renderFeedEmpty(arxivList, 'arXiv publishes no new papers on some days, such as weekends and holidays. Check again after the next announcement.', {
           label: 'Open arXiv', href: 'https://arxiv.org/'
         });
         arxivStatus.textContent = coverage.kind === 'partial'
           ? `No papers from available categories · ${coverage.rejected}/${coverage.total} failed`
-          : 'No papers found.';
+          : 'No new papers in the latest arXiv update.';
       }
       return;
     }
@@ -1443,10 +1156,18 @@ async function loadScourFeed() {
     renderScourBatch();
   } catch (error) {
     if (request !== scourRequestVersion) return;
+    const browserCheck = error.code === 'scour-browser-check';
+    if (browserCheck) void logEvent('warn', 'scour browser check', { source: sourceUrl });
     if (!cached.length) {
-      renderFeedEmpty(scourList, 'Try again, or check the source directly.', { label: 'Open Scour', href: sourceUrl });
-      setStatusWithRetry(scourStatus, 'Failed to load Scour feed.', loadScourFeed);
-    } else scourStatus.textContent = `Using cached data · ${cached.length} items · refresh failed`;
+      renderFeedEmpty(scourList, browserCheck
+        ? 'Scour now shows a browser check to automated requests, so LaunchPad cannot read this feed. Open Scour to read it directly.'
+        : 'Try again, or check the source directly.', { label: 'Open Scour', href: sourceUrl });
+      setStatusWithRetry(scourStatus, browserCheck ? 'Scour requires a browser check.' : 'Failed to load Scour feed.', loadScourFeed);
+    } else {
+      scourStatus.textContent = browserCheck
+        ? `Using cached data · ${cached.length} items · Scour requires a browser check`
+        : `Using cached data · ${cached.length} items · refresh failed`;
+    }
   }
 }
 
@@ -1748,10 +1469,15 @@ async function fetchScourItems(sourceUrl) {
     `${sourceUrl}/feed`
   ];
   let successfulSources = 0;
+  let browserChecks = 0;
   for (const url of urls) {
     try {
       const text = await fetchScourUrl(url);
       successfulSources += 1;
+      if (LaunchPadCore.isScourBrowserCheck(text)) {
+        browserChecks += 1;
+        continue;
+      }
       const trimmed = text.trim();
       const looksXml = trimmed.startsWith('<?xml') || trimmed.includes('<rss') || trimmed.includes('<feed');
       if (looksXml) {
@@ -1774,6 +1500,12 @@ async function fetchScourItems(sourceUrl) {
     }
   }
   if (successfulSources === 0) throw new Error('All Scour sources failed');
+  // Every readable answer was the browser check, so the feed is blocked, not empty.
+  if (browserChecks === successfulSources) {
+    const error = new Error('Scour returned a browser check instead of the feed');
+    error.code = 'scour-browser-check';
+    throw error;
+  }
   return { items: [], source: '' };
 }
 
@@ -2091,9 +1823,6 @@ function setEditMode(enabled) {
   if (!enabled) applyPendingExternalSites();
 }
 
-if (editModeBtn) {
-  editModeBtn.addEventListener('click', () => setEditMode(!isEditMode));
-}
 
 if (editBannerDone) {
   editBannerDone.addEventListener('click', () => setEditMode(false));
@@ -2830,42 +2559,6 @@ accountMenu.addEventListener('dragleave', () => clearDragOver(accountMenu));
 accountMenu.addEventListener('drop', (e) => handleDrop(e, accountMenu));
 accountMenu.addEventListener('dragend', () => handleDragEnd(accountMenu));
 
-googleSearchForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  if (suggestionsOpen() && suggestionIndex > 0 && navigateToSuggestion(suggestionIndex)) return;
-  closeSuggestions();
-  navigateFromGoogleSearch();
-});
-
-searchInput.addEventListener('input', scheduleSuggestions);
-searchInput.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    if (moveSuggestionSelection(e.key === 'ArrowDown' ? 1 : -1)) e.preventDefault();
-  } else if (e.key === 'Escape' && suggestionsOpen()) {
-    // The first Escape closes the dropdown only; the page-level handler runs on the next one.
-    e.preventDefault();
-    e.stopPropagation();
-    closeSuggestions(true);
-  }
-});
-googleSearchForm.addEventListener('focusout', (e) => {
-  if (!googleSearchForm.contains(e.relatedTarget)) closeSuggestions();
-});
-// Keep focus in the input while a suggestion is clicked, as Chrome's dropdown does.
-searchSuggestions.addEventListener('mousedown', (e) => e.preventDefault());
-searchSuggestions.addEventListener('click', (e) => {
-  const option = e.target.closest('[role="option"]');
-  if (option) navigateToSuggestion(Number(option.dataset.index));
-});
-document.getElementById('searchSuggestionsToggle')?.addEventListener('change', (e) => {
-  void setSearchSuggestions(e.target.checked);
-});
-chrome.permissions?.onAdded?.addListener(() => { void refreshSuggestionPermission(); });
-chrome.permissions?.onRemoved?.addListener(() => { void refreshSuggestionPermission(); });
-
-voiceSearchBtn?.addEventListener('click', startVoiceSearch);
-document.getElementById('aiModeBtn')?.addEventListener('click', navigateToGoogleAiMode);
-
 function setPanelOpen(panelName, open) {
   if (!layout) return;
   const className = panelName === 'arxiv' ? 'show-arxiv' : 'show-favorites';
@@ -2913,19 +2606,12 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault();
     if (!addForm.classList.contains('hidden') || !settingsPanel.classList.contains('hidden')) return;
-    searchInput.focus();
-    searchInput.select();
+    search.focus();
     return;
   }
   // Esc → close modals / exit edit mode
   if (e.key === 'Escape') {
-    if (voiceRecognition) {
-      voiceRecognition.abort();
-      voiceRecognition = null;
-      setVoiceSearchState(false, 'Voice search cancelled.');
-      searchInput.focus();
-      return;
-    }
+    if (search.cancelVoice()) return;
     if (!settingsPanel.classList.contains('hidden')) {
       closeSettingsPanel();
       return;
@@ -2951,8 +2637,7 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     // Esc when nothing is open → focus search
-    searchInput.focus();
-    searchInput.select();
+    search.focus();
   }
 });
 
@@ -2970,9 +2655,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     applyPendingExternalSites();
   }
   if (changes.searchSuggestions && typeof changes.searchSuggestions.newValue === 'boolean') {
-    searchSuggestionsEnabled = changes.searchSuggestions.newValue;
-    settingsWriter.accept({ searchSuggestions: searchSuggestionsEnabled });
-    void refreshSuggestionPermission();
+    search.setSuggestionsEnabled(changes.searchSuggestions.newValue);
+    settingsWriter.accept({ searchSuggestions: changes.searchSuggestions.newValue });
+    void search.refreshSuggestionPermission();
   }
   if (changes.themeMode && ['auto', 'light', 'dark'].includes(changes.themeMode.newValue)) {
     themeMode = changes.themeMode.newValue;

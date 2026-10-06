@@ -26,14 +26,42 @@ const GOOGLE_SITE_ICONS = {
   'calendar.google.com': 'https://www.gstatic.com/images/branding/product/1x/calendar_2020q4_32dp.png'
 };
 
+// Site icons come from Chrome's local favicon cache ("favicon" permission), as on
+// Chrome's own new tab page: no network request, so hostnames stay on this device.
+// Pages Chrome has no icon for get Chrome's default icon.
 function getSiteIconUrl(url) {
   try {
     const hostname = new URL(url).hostname;
-    return GOOGLE_SITE_ICONS[hostname] ||
-      `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=64`;
+    if (GOOGLE_SITE_ICONS[hostname]) return GOOGLE_SITE_ICONS[hostname];
+    if (!globalThis.chrome?.runtime?.getURL) return '';
+    const icon = new URL(chrome.runtime.getURL('/_favicon/'));
+    icon.searchParams.set('pageUrl', url);
+    icon.searchParams.set('size', '32');
+    return icon.href;
   } catch {
     return '';
   }
+}
+
+function readImagePixels(image) {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  canvas.getContext('2d').drawImage(image, 0, 0);
+  return canvas.toDataURL();
+}
+
+// Chrome's cache returns one default icon for pages it has no favicon for.
+// Load it once for a page that cannot exist, so those tiles can use a letter.
+let defaultFaviconPixels = null;
+function getDefaultFaviconPixels() {
+  defaultFaviconPixels ||= new Promise(resolve => {
+    const probe = new Image();
+    probe.onload = () => resolve(readImagePixels(probe));
+    probe.onerror = () => resolve('');
+    probe.src = getSiteIconUrl('https://launchpad-no-favicon.invalid/');
+  });
+  return defaultFaviconPixels;
 }
 
 function createSiteIcon(url, name) {
@@ -43,12 +71,21 @@ function createSiteIcon(url, name) {
   image.height = 24;
   image.loading = 'lazy';
   image.src = getSiteIconUrl(url);
-  image.addEventListener('error', () => {
+  const useInitial = () => {
+    if (!image.parentNode) return;
     const initial = document.createElement('span');
     initial.className = 'icon-initial';
     initial.textContent = String(name || '?').slice(0, 1).toUpperCase();
     image.replaceWith(initial);
-  }, { once: true });
+  };
+  image.addEventListener('error', useInitial, { once: true });
+  if (image.src.includes('/_favicon/')) {
+    // Like Chrome's new tab, a site without a cached icon shows its first letter.
+    image.addEventListener('load', async () => {
+      const fallback = await getDefaultFaviconPixels();
+      if (fallback && readImagePixels(image) === fallback) useInitial();
+    }, { once: true });
+  }
   return image;
 }
 

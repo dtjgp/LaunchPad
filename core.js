@@ -307,6 +307,15 @@
     return parsed.href;
   }
 
+  // Scour answers unverified clients with an interactive proof-of-work page
+  // ("Just a moment…"). LaunchPad reports it as a failure and never solves it.
+  function isScourBrowserCheck(text) {
+    if (typeof text !== 'string') return false;
+    return /<meta[^>]+name=["']pow-worker-url["']/i.test(text) ||
+      /\bid=["']gate-status["']/i.test(text) ||
+      /<title>\s*Just a moment(?:…|\.\.\.)?\s*·\s*Scour\s*<\/title>/i.test(text);
+  }
+
   function sanitizeStoredSettings(record = {}) {
     const value = {};
     const invalid = [];
@@ -408,6 +417,7 @@
     validateFetchTarget,
     validateSettingsPatch,
     normalizeScourProfile,
+    isScourBrowserCheck,
     createSettingsWriter,
     settingsEqual,
     sanitizeStoredSettings,
