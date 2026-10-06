@@ -56,17 +56,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
       const preview = message.type === 'fetchPreview';
+      const suggest = message.type === 'fetchSuggest';
       if (preview && !await chrome.permissions.contains({ origins: [`${new URL(validation.url).origin}/*`] })) {
         throw new Error('Preview permission is required for this site');
+      }
+      // Suggestions are opt-in: the optional Google origin must still be granted.
+      if (suggest && !await chrome.permissions.contains({ origins: [LaunchPadCore.GOOGLE_SUGGEST_ORIGIN] })) {
+        throw new Error('Search suggestion permission is required');
       }
       const response = await fetch(validation.url, {
         signal: controller.signal,
         headers,
         referrerPolicy: 'no-referrer',
-        credentials: preview ? 'omit' : 'same-origin',
+        credentials: preview || suggest ? 'omit' : 'same-origin',
         // Untrusted preview targets cannot redirect into another permission scope.
         // Feed publishers use their normal redirects; validate the final source too.
-        redirect: preview ? 'error' : 'follow'
+        redirect: preview || suggest ? 'error' : 'follow'
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       if (response.url && !LaunchPadCore.validateFetchTarget(message.type, response.url).ok) {

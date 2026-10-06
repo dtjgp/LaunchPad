@@ -149,6 +149,26 @@ test('preview fetch omits credentials and rejects automatic redirects', async ()
   assert.equal(options.referrerPolicy, 'no-referrer');
 });
 
+test('search suggestions require the optional Google permission and send no cookies', async () => {
+  const url = LaunchPadCore.buildGoogleSuggestUrl('edge ai');
+  let fetched = false;
+  const denied = loadBackground(async () => { fetched = true; }, false);
+  const blocked = await sendMessage(denied, { type: 'fetchSuggest', url });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.error, /permission/);
+  assert.equal(fetched, false);
+
+  let options;
+  const allowed = loadBackground(async (_, value) => {
+    options = value;
+    return { ok: true, url, headers: { get: () => null }, text: async () => '["edge ai",[]]' };
+  });
+  const response = await sendMessage(allowed, { type: 'fetchSuggest', url });
+  assert.equal(response.ok, true);
+  assert.equal(options.credentials, 'omit');
+  assert.equal(options.redirect, 'error');
+});
+
 test('streamed bodies are stopped at the byte limit even without Content-Length', async () => {
   let cancelled = false;
   let released = false;

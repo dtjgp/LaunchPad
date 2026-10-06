@@ -58,6 +58,13 @@ const test = base.extend({
           })) } }));
         }
         if (url.hostname === 'api.github.com') return new Response('{"items":[],"incomplete_results":false}');
+        if (url.hostname === 'www.google.com' && url.pathname === '/complete/search') {
+          const query = url.searchParams.get('q');
+          return new Response(JSON.stringify([query,
+            [`${query} research`, `${query} <img src=x onerror="window.injected=1">`, 'https://example.org/fixture-lab'],
+            ['', '', '[Test fixture] Lab page'], [],
+            { 'google:suggesttype': ['QUERY', 'QUERY', 'NAVIGATION'] }]));
+        }
         return new Response('<html><body>Test preview content.</body></html>');
       };
     });

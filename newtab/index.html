@@ -116,7 +116,7 @@
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
           </span>
-          <input id="searchInput" type="search" placeholder="Search Google or type a URL" autocomplete="off" enterkeyhint="go" spellcheck="false" autofocus aria-label="Search Google or type a URL" />
+          <input id="searchInput" type="search" placeholder="Search Google or type a URL" autocomplete="off" enterkeyhint="go" spellcheck="false" autofocus aria-label="Search Google or type a URL" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="searchSuggestions" />
           <span class="search-actions">
             <button id="voiceSearchBtn" class="search-action voice-search-button" type="button" aria-label="Search by voice" aria-pressed="false" title="Search by voice">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -145,6 +145,7 @@
               <span class="ai-mode-label">AI Mode</span>
             </button>
           </span>
+          <div id="searchSuggestions" class="search-suggestions" role="listbox" aria-label="Google search suggestions" hidden></div>
         </form>
         <p id="searchStatus" class="search-status" role="status" aria-live="polite"></p>
 
@@ -247,6 +248,14 @@
                 Dark
               </button>
             </div>
+          </div>
+          <div class="settings-section">
+            <label class="settings-toggle" for="searchSuggestionsToggle">
+              <input id="searchSuggestionsToggle" type="checkbox" role="switch" aria-describedby="searchSuggestionsHelp searchSuggestionsState" />
+              <span class="settings-label">Google search suggestions</span>
+            </label>
+            <div id="searchSuggestionsHelp" class="settings-help">Off by default. When on, text typed in this search box is sent to Google, without cookies, to show suggestions. Chrome asks for access to www.google.com.</div>
+            <div id="searchSuggestionsState" class="settings-help" role="status"></div>
           </div>
           <div class="settings-section">
             <label class="settings-label" for="scourUrlInput">Scour profile</label>

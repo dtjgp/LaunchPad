@@ -5,6 +5,9 @@ const {
   normalizeHttpUrl,
   resolveGoogleSearchTarget,
   resolveGoogleAiModeTarget,
+  buildGoogleSuggestUrl,
+  parseGoogleSuggestions,
+  validateSettingsPatch,
   getSearchInputError,
   resolveAvatarUrl,
   saveSettings,
@@ -51,6 +54,43 @@ test('resolveGoogleAiModeTarget asks Google AI Mode and never forwards credentia
   );
   assert.equal(resolveGoogleAiModeTarget('   '), 'https://www.google.com/search?udm=50');
   assert.equal(resolveGoogleAiModeTarget('https://user:secret@example.com'), '');
+});
+
+test('suggestion URLs carry only the typed query and never credential-bearing input', () => {
+  assert.equal(
+    buildGoogleSuggestUrl('  café münchen '),
+    'https://www.google.com/complete/search?client=chrome&ie=utf-8&oe=utf-8&q=caf%C3%A9%20m%C3%BCnchen'
+  );
+  assert.equal(buildGoogleSuggestUrl('   '), '');
+  assert.equal(buildGoogleSuggestUrl('x'.repeat(513)), '');
+  assert.equal(buildGoogleSuggestUrl('https://user:secret@example.com'), '');
+  assert.equal(validateFetchTarget('fetchSuggest', buildGoogleSuggestUrl('edge ai')).ok, true);
+  for (const url of [
+    'https://www.google.com/complete/search?client=chrome&ie=utf-8&oe=utf-8&q=a&callback=x',
+    'https://www.google.com/complete/search?client=firefox&ie=utf-8&oe=utf-8&q=a',
+    'https://google.com/complete/search?client=chrome&ie=utf-8&oe=utf-8&q=a',
+    'https://www.google.com/search?client=chrome&ie=utf-8&oe=utf-8&q=a'
+  ]) assert.equal(validateFetchTarget('fetchSuggest', url).ok, false, url);
+});
+
+test('parseGoogleSuggestions keeps query and navigation matches and rejects malformed payloads', () => {
+  const payload = JSON.stringify(['github', ['github copilot', 'https://github.com/', 'GitHub', 'javascript:alert(1)', 'github pages'],
+    ['', 'How people build software · GitHub', '', '', ''], [],
+    { 'google:suggesttype': ['QUERY', 'NAVIGATION', 'QUERY', 'NAVIGATION', 'QUERY'] }]);
+  assert.deepEqual(parseGoogleSuggestions(payload, 'github'), [
+    { kind: 'query', text: 'github copilot', description: '', url: 'https://www.google.com/search?q=github%20copilot' },
+    { kind: 'navigation', text: 'https://github.com/', description: 'How people build software · GitHub', url: 'https://github.com/' },
+    { kind: 'query', text: 'github pages', description: '', url: 'https://www.google.com/search?q=github%20pages' }
+  ]);
+  const many = JSON.stringify(['a', Array.from({ length: 12 }, (_, i) => `a ${i}`)]);
+  assert.equal(parseGoogleSuggestions(many, 'a').length, 7);
+  assert.throws(() => parseGoogleSuggestions('<html>', 'a'));
+  assert.throws(() => parseGoogleSuggestions('{"q":1}', 'a'), /Invalid suggestion response/);
+});
+
+test('searchSuggestions is a boolean setting', () => {
+  assert.equal(validateSettingsPatch({ searchSuggestions: true }), '');
+  assert.match(validateSettingsPatch({ searchSuggestions: 'yes' }), /Invalid search suggestion/);
 });
 
 test('resolveGoogleSearchTarget preserves omnibox-like web and local URLs', () => {
