@@ -90,6 +90,15 @@
     return googleSearchUrl();
   }
 
+  // AI Mode treats every input, including a URL, as a question for Google.
+  function resolveGoogleAiModeTarget(value) {
+    const query = typeof value === 'string' ? value.trim() : '';
+    if (getSearchInputError(query)) return '';
+    return query
+      ? `https://www.google.com/search?udm=50&q=${encodeURIComponent(query)}`
+      : 'https://www.google.com/search?udm=50';
+  }
+
   function getSearchInputError(value) {
     const input = typeof value === 'string' ? value.trim() : '';
     const explicitUrl = /^[a-z][a-z\d+.-]*:\/\//i.test(input);
@@ -333,6 +342,7 @@
   return {
     normalizeHttpUrl,
     resolveGoogleSearchTarget,
+    resolveGoogleAiModeTarget,
     getSearchInputError,
     resolveAvatarUrl,
     saveSettings,

@@ -69,6 +69,9 @@ test('LaunchPad owns the masthead while search is a Google-only native-style lau
   assert.match(js, /resolveGoogleSearchTarget\(searchInput\.value\)/);
   assert.match(css, /\.search-action\s*\{/);
   assert.match(css, /\.search\s*\{[^}]*flex-shrink:\s*0;/);
-  assert.match(css, /@media \(max-width: 600px\)[\s\S]*?\.search\s*\{[^}]*gap:\s*6px;[^}]*padding:/);
+  assert.match(css, /\.search\s*\{[^}]*height:\s*56px;[^}]*border-radius:\s*28px;/);
+  assert.match(html, /id="aiModeBtn"[^>]*aria-label="Ask in Google AI Mode"/);
+  assert.match(js, /resolveGoogleAiModeTarget\(searchInput\.value\)/);
+  assert.match(css, /@media \(max-width: 600px\)[\s\S]*?\.ai-mode-label\s*\{\s*display:\s*none;/);
   assert.match(css, /@keyframes brand-enter/);
 });

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   normalizeHttpUrl,
   resolveGoogleSearchTarget,
+  resolveGoogleAiModeTarget,
   getSearchInputError,
   resolveAvatarUrl,
   saveSettings,
@@ -37,6 +38,19 @@ test('resolveGoogleSearchTarget sends ordinary text only to Google Search', () =
     'https://www.google.com/search?q=3.14'
   );
   assert.equal(resolveGoogleSearchTarget('   '), '');
+});
+
+test('resolveGoogleAiModeTarget asks Google AI Mode and never forwards credentials', () => {
+  assert.equal(
+    resolveGoogleAiModeTarget('  compare structured pruning methods '),
+    'https://www.google.com/search?udm=50&q=compare%20structured%20pruning%20methods'
+  );
+  assert.equal(
+    resolveGoogleAiModeTarget('example.com/docs'),
+    'https://www.google.com/search?udm=50&q=example.com%2Fdocs'
+  );
+  assert.equal(resolveGoogleAiModeTarget('   '), 'https://www.google.com/search?udm=50');
+  assert.equal(resolveGoogleAiModeTarget('https://user:secret@example.com'), '');
 });
 
 test('resolveGoogleSearchTarget preserves omnibox-like web and local URLs', () => {

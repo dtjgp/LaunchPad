@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Search box follows Chrome's new tab searchbox: 56px light pill, voice and Lens targets, and an AI Mode button that opens Google AI Mode with the typed query.
+- Shortcut tiles use Chrome's new tab tile geometry: 112px tiles, 48px icon circles, single-line titles and translucent hover.
+
 ## 1.1.0 — 2026-09-07
 
 - Google-only search with direct URL navigation, voice-input handling and Google Lens.

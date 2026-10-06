@@ -706,6 +706,15 @@ function navigateFromGoogleSearch() {
   }
 }
 
+function navigateToGoogleAiMode() {
+  const target = LaunchPadCore.resolveGoogleAiModeTarget(searchInput.value);
+  if (target) {
+    window.location.href = target;
+  } else {
+    searchStatus.textContent = LaunchPadCore.getSearchInputError(searchInput.value);
+  }
+}
+
 function setVoiceSearchState(isListening, message = '') {
   voiceSearchBtn?.classList.toggle('is-listening', isListening);
   voiceSearchBtn?.setAttribute('aria-pressed', isListening ? 'true' : 'false');
@@ -2618,6 +2627,7 @@ googleSearchForm.addEventListener('submit', (e) => {
 });
 
 voiceSearchBtn?.addEventListener('click', startVoiceSearch);
+document.getElementById('aiModeBtn')?.addEventListener('click', navigateToGoogleAiMode);
 
 function setPanelOpen(panelName, open) {
   if (!layout) return;

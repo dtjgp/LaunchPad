@@ -245,6 +245,10 @@ test('Google query, direct URL, voice result and Lens keep their navigation targ
   await openNewTab(page, extensionId);
   await page.locator('#googleLensLink').click();
   await expect(page).toHaveURL('https://lens.google.com/');
+  await openNewTab(page, extensionId);
+  await page.locator('#searchInput').fill('compare structured pruning methods');
+  await page.locator('#aiModeBtn').click();
+  await expect(page).toHaveURL('https://www.google.com/search?udm=50&q=compare%20structured%20pruning%20methods');
 });
 
 test('preview permission denial remains visible and requests only the selected origin', async ({ page, extensionId }) => {
