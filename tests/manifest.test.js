@@ -47,6 +47,8 @@ test('manifest grants only the feed hosts used by the background worker', () => 
   );
   assert.equal(manifest.host_permissions.includes('https://raw.githubusercontent.com/*'), false);
   assert.equal(manifest.host_permissions.includes('https://www.google.com/*'), false);
+  // Shortcut icons use Chrome's local favicon cache instead of a remote icon service.
+  assert.deepEqual(manifest.permissions, ['storage', 'favicon']);
 });
 
 test('new tab replaces the editorial panel with Academic GitHub Trend', () => {

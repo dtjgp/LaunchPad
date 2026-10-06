@@ -169,6 +169,19 @@ test('a Scour browser check is reported as blocked, not as an empty feed', async
   await expect(page.locator('#scourList .research-card').first()).toBeVisible();
 });
 
+test('shortcut icons come from Chrome\'s local favicon cache, with a letter when it has none', async ({ page, context, extensionId }) => {
+  const remoteIconRequests = [];
+  context.on('request', request => { if (/s2\/favicons/.test(request.url())) remoteIconRequests.push(request.url()); });
+  await openNewTab(page, extensionId);
+  // A cached icon is drawn as-is; this disposable profile has none, so tiles fall back to letters.
+  expect(await page.evaluate(() => getSiteIconUrl('https://github.com/'))).toBe(
+    `chrome-extension://${extensionId}/_favicon/?pageUrl=https%3A%2F%2Fgithub.com%2F&size=32`);
+  await expect(page.locator('#launchpad > .shortcut').nth(1).locator('.icon-initial')).toHaveText('G');
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await expect(page.locator('.launch-item').nth(1).locator('.icon-initial')).toHaveText('G');
+  expect(remoteIconRequests).toEqual([]);
+});
+
 test('manual and system themes use accessible foreground pairs and propagate to popup', async ({ page, extensionId }) => {
   await openNewTab(page, extensionId);
   const measurements = [];
