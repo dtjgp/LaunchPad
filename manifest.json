@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "LaunchPad",
   "version": "1.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuAnm8VYr6H5lc4r3B2YSNvHwbu2rbaJ3WvPXKokuPJXjJp6X6eucq6POp7hqOB06coENSTfS8/wB2PMf1NzkveWC8KjdmtmSdy4E7LrkFokArmpDrXAXp/yVZVejmO3EMd6bqPqTCnxWxuO4ksVXe0CbxqdVrAjOaRJy4GHLESssNO/xD0hP2VTzQwxQDGisRa4FlhdCm/jLhwZ8GmkSxUGenR+Wr7Nt8XdCCs7W1hkojmr/+eqwaImkAZ9lOc2KFfvUwY6neV6EIdtOtZmTe311ajsmpv+6VUaPEYhWbwMghU7zG3Qk2tYo+ePNXVrkJFFPgDO5MtkS4sGu0sdH7wIDAQAB",
   "description": "A Google-style research new tab with shortcuts, arXiv filters, a configurable Scour feed and academic GitHub discovery.",
   "action": {
     "default_popup": "popup.html",
