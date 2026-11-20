@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.1 — 2026-11-20
 
 - Scour: the panel reads the profile's official `rss.xml` / `atom.xml` feed, which has no browser check, before trying the profile page. Item links open the original article and Scour categories show as tags.
 
