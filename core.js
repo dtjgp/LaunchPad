@@ -387,6 +387,16 @@
       ? navigator.locks.request('launchpad-settings', write) : write();
   }
 
+  function formatUpdatedAgo(timestamp, now = Date.now()) {
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+    const minutes = Math.floor(Math.max(0, now - timestamp) / 60000);
+    if (minutes < 1) return 'Updated just now';
+    if (minutes < 60) return `Updated ${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Updated ${hours} h ago`;
+    return `Updated ${Math.floor(hours / 24)} d ago`;
+  }
+
   function createSettingsWriter(storage, initial = {}) {
     let baseline = clone(initial);
     let queue = Promise.resolve();
@@ -428,6 +438,7 @@
     normalizeScourProfile,
     isScourBrowserCheck,
     createSettingsWriter,
+    formatUpdatedAgo,
     settingsEqual,
     sanitizeStoredSettings,
     STORAGE_KEYS

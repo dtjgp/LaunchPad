@@ -998,6 +998,55 @@ body.newtab-page {
   animation: panel-enter-right 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.panel-updated {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.panel-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.panel-refresh:hover {
+  color: var(--blue);
+  background: var(--blue-subtle);
+}
+
+.panel-refresh:disabled {
+  cursor: progress;
+}
+
+.panel-refresh[aria-busy="true"] svg {
+  animation: panel-refresh-spin 900ms linear infinite;
+}
+
+@keyframes panel-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-refresh[aria-busy="true"] svg { animation: none; }
+}
+
 .panel-link {
   color: var(--muted);
   display: flex;

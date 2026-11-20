@@ -102,6 +102,7 @@ let arxivRequestVersion = 0;
 // 'latest' shows the arXiv RSS announcement; 'hf' shows Hugging Face Daily Papers by upvotes.
 let arxivSource = 'latest';
 let hfItems = [];
+const panelUpdatedAt = { latest: 0, hf: 0, scour: 0, trend: 0 };
 const HF_FILTER_PREF_KEY = 'pref_hf_apply_filter';
 let hfApplyFilter = readLocalJson(HF_FILTER_PREF_KEY) === true;
 let hfIndex = new Map();
@@ -165,6 +166,33 @@ function renderSkeleton(container, count = 4) {
       <div class="skeleton-line short"></div>
     `;
     container.appendChild(item);
+  }
+}
+
+function renderPanelUpdated() {
+  const labels = { arxivUpdated: panelUpdatedAt[arxivSource], scourUpdated: panelUpdatedAt.scour, trendUpdated: panelUpdatedAt.trend };
+  for (const [id, timestamp] of Object.entries(labels)) {
+    const label = document.getElementById(id);
+    if (!label) continue;
+    label.textContent = LaunchPadCore.formatUpdatedAgo(timestamp);
+    label.title = timestamp ? new Date(timestamp).toLocaleString() : '';
+  }
+}
+
+function markPanelUpdated(key, timestamp = Date.now()) {
+  panelUpdatedAt[key] = Number(timestamp) || 0;
+  renderPanelUpdated();
+}
+
+async function runPanelRefresh(button, refresh) {
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    await refresh();
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
   }
 }
 
@@ -959,6 +987,7 @@ async function loadArxivFeed() {
   const latestVisible = () => arxivSource === 'latest';
   if (cached.length) {
     arxivItems = cached;
+    markPanelUpdated('latest', readLocalJson(CACHE_KEYS.arxiv)?.fetchedAt);
     const rendered = latestVisible() ? renderArxivItems() : countArxivMatches(arxivItems);
     setArxivSourceStatus('latest', `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`);
   } else {
@@ -1036,6 +1065,7 @@ async function loadArxivFeed() {
     }
     // Keep the full announcement so later filter changes search every paper, not a truncated subset.
     arxivItems = ArxivResearch.rankArxivItems(merged);
+    markPanelUpdated('latest');
     if (coverage.kind === 'complete') {
       writeLocalJson(CACHE_KEYS.arxiv, {
         version: 2,
@@ -1110,7 +1140,10 @@ function applyHfItems(items) {
 
 async function initHfDaily() {
   const cache = readHfCache();
-  if (cache?.items.length) applyHfItems(cache.items);
+  if (cache?.items.length) {
+    applyHfItems(cache.items);
+    markPanelUpdated('hf', cache.fetchedAt);
+  }
   if (!await getHfPermissionState()) return;
   // Badges on the Latest view refresh quietly once the user has granted access.
   if (hfItems.length && arxivSource === 'latest') renderArxivItems({ keepStatus: true });
@@ -1137,6 +1170,7 @@ async function loadHfDaily() {
     if (requestVersion !== hfRequestVersion) return;
     applyHfItems(items);
     writeLocalJson(CACHE_KEYS.hfDaily, { version: 1, fetchedAt: Date.now(), items });
+    markPanelUpdated('hf');
     if (hfVisible()) {
       if (!items.length) {
         renderFeedEmpty(arxivList, 'Hugging Face has no daily papers right now.', { label: 'Open Hugging Face', href: HF_PAPERS_PAGE });
@@ -1190,6 +1224,7 @@ function setHfApplyFilter(value) {
 function showArxivSource(source) {
   arxivSource = source;
   renderArxivSourceSwitch();
+  renderPanelUpdated();
   updateArxivResearchContext();
   const status = arxivSourceStatus[source];
   const items = source === 'hf' ? hfItems : arxivItems;
@@ -1358,6 +1393,7 @@ async function loadScourFeed() {
   scourList.replaceChildren();
   scourItems = [];
   scourRendered = 0;
+  markPanelUpdated('scour', 0);
   if (!sourceUrl) {
     scourStatus.textContent = 'No Scour profile connected';
     renderFeedEmpty(scourList, 'Connect a public Scour profile to keep your reading feed here.', {
@@ -1374,6 +1410,7 @@ async function loadScourFeed() {
     : sourceUrl === LEGACY_SCOUR_URL && Array.isArray(record) ? record : []);
   if (cached.length) {
     scourItems = cached;
+    if (record?.source === sourceUrl) markPanelUpdated('scour', record.fetchedAt);
     scourStatus.textContent = `Showing cached · ${cached.length} items`;
     renderScourBatch();
   } else {
@@ -1392,6 +1429,7 @@ async function loadScourFeed() {
       return;
     }
     writeLocalJson(CACHE_KEYS.scour, { version: 2, source: sourceUrl, fetchedAt: Date.now(), items });
+    markPanelUpdated('scour');
     scourItems = items;
     scourRendered = 0;
     scourList.replaceChildren();
@@ -1458,12 +1496,13 @@ function formatAcademicTrendStatus(cache, prefix = '') {
   return prefix ? `${prefix} · ${message}` : message;
 }
 
-async function loadAcademicTrend() {
+async function loadAcademicTrend({ force = false } = {}) {
   if (!favoriteList || !favoriteStatus) return;
   const storedCache = readLocalJson(CACHE_KEYS.academicTrend);
   const cached = storedCache ? { ...storedCache, items: sanitizeCachedFeed(storedCache.items) } : null;
   const cachedItems = Array.isArray(cached?.items) ? cached.items : [];
-  if (AcademicTrend.isFreshTrendCache(cached)) {
+  if (cachedItems.length) markPanelUpdated('trend', cached.fetchedAt);
+  if (!force && AcademicTrend.isFreshTrendCache(cached)) {
     favoriteStatus.textContent = formatAcademicTrendStatus(cached, 'Cached < 1h');
     renderAcademicTrendItems(cached.items);
     return;
@@ -1541,6 +1580,7 @@ async function loadAcademicTrend() {
     };
     const trendCache = AcademicTrend.createTrendCache(items, coverage);
     writeLocalJson(CACHE_KEYS.academicTrend, trendCache);
+    markPanelUpdated('trend', trendCache.fetchedAt);
     favoriteStatus.textContent = formatAcademicTrendStatus(trendCache, 'Updated now');
     renderAcademicTrendItems(items);
   } catch (error) {
@@ -2457,6 +2497,17 @@ document.getElementById('arxivSourceSwitch')?.addEventListener('click', (event) 
   if (!button || button.dataset.source === arxivSource) return;
   selectArxivSource(button.dataset.source);
 });
+
+document.getElementById('arxivPanelRefreshBtn')?.addEventListener('click', (event) => {
+  void runPanelRefresh(event.currentTarget, () => arxivSource === 'hf' ? loadHfDaily() : loadArxivFeed());
+});
+document.getElementById('scourPanelRefreshBtn')?.addEventListener('click', (event) => {
+  void runPanelRefresh(event.currentTarget, loadScourFeed);
+});
+document.getElementById('trendPanelRefreshBtn')?.addEventListener('click', (event) => {
+  void runPanelRefresh(event.currentTarget, () => loadAcademicTrend({ force: true }));
+});
+setInterval(renderPanelUpdated, 60 * 1000);
 
 document.getElementById('hfFilterToggle')?.addEventListener('click', () => setHfApplyFilter(!hfApplyFilter));
 

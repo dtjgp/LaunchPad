@@ -23,8 +23,10 @@ const test = base.extend({
       globalThis.fixtureMode = 'populated';
       const fixtureCategories = ['cs.AI', 'cs.LG', 'cs.CV', 'cs.NI', 'eess.SP', 'cs.IT', 'eess.SY', 'cs.RO', 'cs.CL'];
       const fixtureArxivId = (category, index) => `2609.${Math.max(0, fixtureCategories.indexOf(category)) + 10}${index}0`;
+      globalThis.fetchCounts = {};
       globalThis.fetch = async value => {
         const url = new URL(value);
+        fetchCounts[url.hostname] = (fetchCounts[url.hostname] || 0) + 1;
         if (fixtureMode === 'failed') throw new Error('Fixture: network unavailable');
         if (fixtureMode === 'scour-gate' && url.hostname.endsWith('scour.ing')) {
           // Shape of Scour's proof-of-work gate page (Oct 2026), reduced to its markers.

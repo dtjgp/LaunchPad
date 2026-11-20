@@ -186,6 +186,25 @@ test('an empty arXiv update keeps cached papers instead of clearing the panel', 
   await expect(page.locator('#arxivList .research-card')).toHaveCount(count);
 });
 
+test('panel refresh buttons bypass fresh caches and show when each panel was updated', async ({ page, worker, extensionId }) => {
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#arxivUpdated')).toHaveText('Updated just now');
+  await expect(page.locator('#scourUpdated')).toHaveText('Updated just now');
+  await expect(page.locator('#trendUpdated')).toHaveText('Updated just now');
+  await page.reload();
+  await expect(page.locator('#trendList .research-card, #favoriteList .research-card').first()).toBeVisible();
+  const before = await worker.evaluate(() => ({ ...fetchCounts }));
+  // The trend cache is still fresh, so only the button may trigger another request.
+  await page.locator('#trendPanelRefreshBtn').click();
+  await expect.poll(() => worker.evaluate(() => fetchCounts['api.ossinsight.io'] || 0)).toBeGreaterThan(before['api.ossinsight.io'] || 0);
+  await expect(page.locator('#trendPanelRefreshBtn')).toBeEnabled();
+  await page.locator('#scourPanelRefreshBtn').click();
+  await expect.poll(() => worker.evaluate(() => fetchCounts['scour.ing'] || 0)).toBeGreaterThan(before['scour.ing'] || 0);
+  await page.locator('#arxivPanelRefreshBtn').click();
+  await expect.poll(() => worker.evaluate(() => fetchCounts['rss.arxiv.org'] || 0)).toBeGreaterThan(before['rss.arxiv.org'] || 0);
+  await expect(page.locator('#arxivUpdated')).toHaveText('Updated just now');
+});
+
 test('a Scour browser check is reported as blocked, not as an empty feed', async ({ page, worker, extensionId }) => {
   await worker.evaluate(() => { globalThis.fixtureMode = 'scour-gate'; });
   await openNewTab(page, extensionId);
