@@ -169,6 +169,26 @@ test('search suggestions require the optional Google permission and send no cook
   assert.equal(options.redirect, 'error');
 });
 
+test('Hugging Face papers require the optional origin permission and send no cookies', async () => {
+  const url = 'https://huggingface.co/api/daily_papers?limit=100';
+  let fetched = false;
+  const denied = loadBackground(async () => { fetched = true; }, false);
+  const blocked = await sendMessage(denied, { type: 'fetchHfDaily', url });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.error, /Hugging Face permission/);
+  assert.equal(fetched, false);
+
+  let options;
+  const allowed = loadBackground(async (_, value) => {
+    options = value;
+    return { ok: true, url, headers: { get: () => null }, text: async () => '[]' };
+  });
+  const response = await sendMessage(allowed, { type: 'fetchHfDaily', url });
+  assert.equal(response.ok, true);
+  assert.equal(options.credentials, 'omit');
+  assert.equal(options.redirect, 'error');
+});
+
 test('streamed bodies are stopped at the byte limit even without Content-Length', async () => {
   let cancelled = false;
   let released = false;

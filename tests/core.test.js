@@ -74,6 +74,17 @@ test('suggestion URLs carry only the typed query and never credential-bearing in
   ]) assert.equal(validateFetchTarget('fetchSuggest', url).ok, false, url);
 });
 
+test('Hugging Face fetches are limited to the daily papers API', () => {
+  assert.equal(validateFetchTarget('fetchHfDaily', 'https://huggingface.co/api/daily_papers?limit=100').ok, true);
+  for (const url of [
+    'https://huggingface.co/api/daily_papers?limit=101',
+    'https://huggingface.co/api/daily_papers?limit=10&search=x',
+    'https://huggingface.co/api/models?limit=10',
+    'https://evil.huggingface.co/api/daily_papers?limit=10',
+    'http://huggingface.co/api/daily_papers?limit=10'
+  ]) assert.equal(validateFetchTarget('fetchHfDaily', url).ok, false, url);
+});
+
 test('parseGoogleSuggestions keeps query and navigation matches and rejects malformed payloads', () => {
   const payload = JSON.stringify(['github', ['github copilot', 'https://github.com/', 'GitHub', 'javascript:alert(1)', 'github pages'],
     ['', 'How people build software · GitHub', '', '', ''], [],

@@ -19,6 +19,8 @@ Using the search box navigates to Google or the address you entered. An address 
 
 Google search suggestions are off by default. When you switch them on in Settings, Chrome asks for access to `www.google.com`. While they are on, the text you type in the LaunchPad search box is sent to Google's suggestion service after a short pause, without cookies and without a referring page. Addresses with an embedded username or password are never sent. Switching suggestions off removes that site access. Chrome's own address bar is separate and follows Chrome's settings.
 
+The arXiv panel's **HF Hot** source is optional. The first time you choose it, Chrome asks for access to `huggingface.co`; LaunchPad then reads the public Hugging Face Daily Papers list (no account or cookies are needed) and caches it locally. Without that access no Hugging Face request is made.
+
 Article previews request an optional permission for the selected HTTPS origin. Preview fetches omit credentials and do not follow redirects. Normal feed requests use the browser's same-origin credential policy. Previews may display an image supplied by the article metadata; that request can contact the image host. Preview requests/images suppress the referring page URL.
 
 These services receive normal network information, including your IP address, and their own privacy policies apply. LaunchPad does not read your Google profile, sign-in status, browsing history, passwords, cookies API or unrelated tabs.
@@ -28,7 +30,7 @@ These services receive normal network information, including your IP address, an
 - `storage`: save settings locally and in Chrome's sync area.
 - `favicon`: read site icons from Chrome's local favicon cache. Chrome may describe it as "Read the icons of the websites you visit"; LaunchPad requests only the icons of your shortcuts and suggestions.
 - Required source host permissions: arXiv, Scour, OSS Insight and GitHub endpoints.
-- Optional HTTPS host permissions: requested for individual preview origins after you select Preview, and for `www.google.com` only when you switch on search suggestions.
+- Optional HTTPS host permissions: requested for individual preview origins after you select Preview, for `www.google.com` only when you switch on search suggestions, and for `huggingface.co` only when you choose HF Hot.
 
 You can disconnect Scour by clearing its profile field, remove the custom avatar URL, or manage extension site access in Chrome's extension details. Disable the extension to stop new-tab behavior. Removing the extension clears its local extension storage; Chrome-managed sync/site data follow Chrome's own settings.
 

@@ -9,9 +9,17 @@
   const GOOGLE_SUGGEST_ORIGIN = `https://${GOOGLE_SUGGEST_HOST}/*`;
   const MAX_SUGGEST_QUERY_LENGTH = 512;
   const MAX_SUGGESTIONS = 7;
+  const HF_HOST = 'huggingface.co';
+  const HF_DAILY_ORIGIN = `https://${HF_HOST}/*`;
   const FETCH_RULES = {
     fetchArxiv(url) {
       return url.hostname === 'rss.arxiv.org' && url.pathname.startsWith('/rss/');
+    },
+    fetchHfDaily(url) {
+      const limit = Number(url.searchParams.get('limit') || '0');
+      return url.hostname === HF_HOST && url.pathname === '/api/daily_papers' &&
+        Number.isInteger(limit) && limit >= 1 && limit <= 100 &&
+        Array.from(url.searchParams.keys()).every(key => key === 'limit');
     },
     fetchScour(url) {
       return url.hostname === 'scour.ing' || url.hostname === 'www.scour.ing';
@@ -408,6 +416,7 @@
     buildGoogleSuggestUrl,
     parseGoogleSuggestions,
     GOOGLE_SUGGEST_ORIGIN,
+    HF_DAILY_ORIGIN,
     getSearchInputError,
     resolveAvatarUrl,
     saveSettings,

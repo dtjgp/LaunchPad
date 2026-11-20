@@ -14,7 +14,7 @@ See [INSTALL.md](INSTALL.md) for full installation, update and removal instructi
 
 - **Search and launch**: a search box styled like Chrome's new tab page, with Google-only queries, direct HTTP(S)/local URLs, browser voice input when available, Google Lens and an AI Mode button. Optional Google suggestions (off by default) appear in a Chrome-style dropdown.
 - **Shortcuts**: add, edit, remove and drag to reorder in the popup and new tab. Hover or focus a tile to find its More menu; right-click also works.
-- **arXiv Radar**: four research tracks combine RSS categories and text filters. Advanced filters support phrases, AND/OR and grouped expressions, with clear syntax errors and saved views.
+- **arXiv Radar**: four research tracks combine RSS categories and text filters. Advanced filters support phrases, AND/OR and grouped expressions, with clear syntax errors and saved views. A **Latest | HF Hot** switch shows Hugging Face Daily Papers ranked by upvotes (optional `huggingface.co` access); papers that match show their upvotes and a Code link when a GitHub repository is listed.
 - **Scour Inbox**: connect a public profile in Settings. A new installation has no personal feed configured. Source changes do not reuse another profile's cached items.
 - **Academic GitHub**: research-profile ranking over OSS Insight's seven-day candidate pool and GitHub Search fallbacks. The displayed source/window/coverage describe which data was actually available.
 - **Themes and layout**: light, dark and system modes, adjustable research-panel visibility, responsive layouts and keyboard-accessible controls.

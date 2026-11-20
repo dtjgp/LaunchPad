@@ -144,6 +144,58 @@
       normalizedLeft.every((value, index) => value === normalizedRight[index]);
   }
 
+  const ARXIV_ID_PATTERN = /^\d{4}\.\d{4,5}$/;
+  const GITHUB_REPO_PATTERN = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i;
+
+  function extractArxivId(link) {
+    const match = String(link || '').match(/arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?/i);
+    return match ? match[1] : '';
+  }
+
+  function normalizeGithubRepo(value) {
+    const match = String(value || '').trim().match(GITHUB_REPO_PATTERN);
+    return match ? `https://github.com/${match[1]}/${match[2]}` : '';
+  }
+
+  // Hugging Face Daily Papers: community-curated arXiv papers with upvotes and optional code links.
+  function parseHfDailyPapers(payload) {
+    if (!Array.isArray(payload)) throw new Error('Hugging Face returned an unexpected payload');
+    const seen = new Set();
+    const items = [];
+    for (const entry of payload) {
+      const paper = entry?.paper;
+      const arxivId = typeof paper?.id === 'string' ? paper.id.trim() : '';
+      if (!ARXIV_ID_PATTERN.test(arxivId) || seen.has(arxivId)) continue;
+      seen.add(arxivId);
+      const upvotes = Number(paper.upvotes);
+      const authors = Array.isArray(paper.authors)
+        ? paper.authors.map(author => typeof author?.name === 'string' ? author.name.trim() : '').filter(Boolean).join(', ')
+        : '';
+      const submittedAt = typeof paper.submittedOnDailyAt === 'string' ? paper.submittedOnDailyAt : '';
+      items.push({
+        arxivId,
+        title: String(paper.title || entry.title || 'Untitled').replace(/\s+/g, ' ').trim(),
+        link: `https://arxiv.org/abs/${arxivId}`,
+        hfLink: `https://huggingface.co/papers/${arxivId}`,
+        description: String(paper.ai_summary || paper.summary || '').trim(),
+        authors,
+        upvotes: Number.isFinite(upvotes) && upvotes > 0 ? Math.floor(upvotes) : 0,
+        githubRepo: normalizeGithubRepo(paper.githubRepo),
+        category: 'HF Daily',
+        pubDate: submittedAt
+      });
+    }
+    return items.sort((left, right) => right.upvotes - left.upvotes);
+  }
+
+  function buildHfPaperIndex(items) {
+    const index = new Map();
+    for (const item of Array.isArray(items) ? items : []) {
+      if (item?.arxivId) index.set(item.arxivId, item);
+    }
+    return index;
+  }
+
   function findMatchingArxivResearchTrack(categories, query, mode = 'any') {
     if (!Array.isArray(categories) || typeof query !== 'string' || mode !== 'any') return '';
     const candidates = [buildArxivResearchPreset('all'), ...ARXIV_RESEARCH_TRACKS.map(cloneTrack)];
@@ -156,11 +208,15 @@
   return {
     ARXIV_RESEARCH_TRACKS,
     buildArxivResearchPreset,
+    buildHfPaperIndex,
+    extractArxivId,
     findMatchingArxivResearchTrack,
     formatArxivAuthors,
     getArxivAnnounceLabel,
     matchArxivResearchTracks,
     normalizeArxivAnnounceType,
+    normalizeGithubRepo,
+    parseHfDailyPapers,
     rankArxivItems
   };
 });

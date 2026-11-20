@@ -143,6 +143,29 @@ test('cached papers stay visible when refresh fails and zero-match filters offer
   await expect(page.locator('#arxivList .research-card').first()).toBeVisible();
 });
 
+test('HF Hot asks for huggingface.co only, ranks by upvotes and annotates matching arXiv cards', async ({ page, worker, extensionId }) => {
+  await page.addInitScript(() => {
+    let granted = false;
+    chrome.permissions.contains = async () => granted;
+    chrome.permissions.request = async request => { window.requestedHfOrigins = request.origins; granted = true; return true; };
+  });
+  await worker.evaluate(() => { chrome.permissions.contains = async () => true; });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#arxivStatus')).toContainText('Updated');
+  await expect(page.locator('#arxivList .research-card-action')).toHaveCount(0);
+  await page.getByRole('button', { name: 'HF Hot' }).click();
+  expect(await page.evaluate(() => window.requestedHfOrigins)).toEqual(['https://huggingface.co/*']);
+  await expect(page.getByRole('button', { name: 'HF Hot' })).toHaveAttribute('aria-pressed', 'true');
+  const hfTitles = page.locator('#arxivList .research-card-link');
+  await expect(hfTitles).toHaveText(['[Test fixture] Structured pruning for edge AI', '[Test fixture] Edge AI community favourite']);
+  await expect(page.locator('#arxivList .research-card').first().locator('.research-card-action')).toHaveText(['▲ 42 on HF', 'Code']);
+  await page.getByRole('button', { name: 'Latest' }).click();
+  const matched = page.locator('#arxivList .research-card.has-actions');
+  await expect(matched).toHaveCount(1);
+  await expect(matched.getByRole('link', { name: 'Code' })).toHaveAttribute('href', 'https://github.com/fixture-lab/pruning');
+  await expect(matched.locator('.research-card-link')).toHaveAttribute('href', /arxiv\.org\/abs\/2609\.1000/);
+});
+
 test('an empty arXiv update keeps cached papers instead of clearing the panel', async ({ page, worker, extensionId }) => {
   await openNewTab(page, extensionId);
   await expect(page.locator('#arxivStatus')).toContainText('Updated');

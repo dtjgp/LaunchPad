@@ -551,6 +551,91 @@ body.newtab-page {
   line-height: 1.5;
 }
 
+.research-card.has-actions {
+  position: relative;
+}
+
+.research-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Stretch the title link over the card; secondary actions sit above it. */
+.research-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.research-card.has-actions:has(.research-card-link:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.research-card-link:focus-visible {
+  outline: none;
+}
+
+.research-card-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.research-card-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.research-card-action:hover {
+  background: var(--blue-subtle);
+}
+
+.source-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.source-switch-btn {
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.source-switch-btn:hover {
+  color: var(--text);
+}
+
+.source-switch-btn.active {
+  background: var(--blue-subtle);
+  color: var(--blue);
+}
+
 /* === LaunchPad product masthead === */
 .product-brand {
   display: inline-flex;

@@ -57,6 +57,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       const preview = message.type === 'fetchPreview';
       const suggest = message.type === 'fetchSuggest';
+      const hfDaily = message.type === 'fetchHfDaily';
+      const optionalSource = preview || suggest || hfDaily;
       if (preview && !await chrome.permissions.contains({ origins: [`${new URL(validation.url).origin}/*`] })) {
         throw new Error('Preview permission is required for this site');
       }
@@ -64,14 +66,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (suggest && !await chrome.permissions.contains({ origins: [LaunchPadCore.GOOGLE_SUGGEST_ORIGIN] })) {
         throw new Error('Search suggestion permission is required');
       }
+      if (hfDaily && !await chrome.permissions.contains({ origins: [LaunchPadCore.HF_DAILY_ORIGIN] })) {
+        throw new Error('Hugging Face permission is required');
+      }
       const response = await fetch(validation.url, {
         signal: controller.signal,
         headers,
         referrerPolicy: 'no-referrer',
-        credentials: preview || suggest ? 'omit' : 'same-origin',
+        credentials: optionalSource ? 'omit' : 'same-origin',
         // Untrusted preview targets cannot redirect into another permission scope.
         // Feed publishers use their normal redirects; validate the final source too.
-        redirect: preview || suggest ? 'error' : 'follow'
+        redirect: optionalSource ? 'error' : 'follow'
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       if (response.url && !LaunchPadCore.validateFetchTarget(message.type, response.url).ok) {

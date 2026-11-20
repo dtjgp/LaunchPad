@@ -99,6 +99,12 @@ const MAX_ARXIV_RENDERED = 120;
 const MAX_ARXIV_CACHED = 1000;
 let groupDragIndex = null;
 let arxivRequestVersion = 0;
+// 'latest' shows the arXiv RSS announcement; 'hf' shows Hugging Face Daily Papers by upvotes.
+let arxivSource = 'latest';
+let hfItems = [];
+let hfIndex = new Map();
+let hfRequestVersion = 0;
+const arxivSourceStatus = { latest: null, hf: null };
 let previewRequestVersion = 0;
 let avatarRequestVersion = 0;
 
@@ -139,8 +145,13 @@ const LEGACY_SCOUR_URL = 'https://scour.ing/@dtjgp';
 const CACHE_KEYS = {
   arxiv: 'cache_arxiv',
   scour: 'cache_scour',
-  academicTrend: 'cache_academic_trend_v1'
+  academicTrend: 'cache_academic_trend_v1',
+  hfDaily: 'cache_hf_daily_v1'
 };
+
+const HF_DAILY_URL = 'https://huggingface.co/api/daily_papers?limit=100';
+const HF_PAPERS_PAGE = 'https://huggingface.co/papers';
+const HF_CACHE_FRESH_MS = 30 * 60 * 1000;
 
 function renderSkeleton(container, count = 4) {
   container.innerHTML = '';
@@ -385,6 +396,7 @@ async function init() {
   setPanelOpen('favorites', panelVisibility.favorites);
   void search.refreshSuggestionPermission();
   loadArxivFeed();
+  void initHfDaily();
   loadScourFeed();
   loadAcademicTrend();
 }
@@ -722,7 +734,9 @@ function updateArxivResearchContext() {
     ? ArxivResearch.buildArxivResearchPreset(activeId)
     : null;
   if (arxivSubtitle) {
-    arxivSubtitle.textContent = activePreset
+    arxivSubtitle.textContent = arxivSource === 'hf'
+      ? 'Hugging Face Daily Papers · ranked by upvotes'
+      : activePreset
       ? `${activePreset.label} · ${arxivCategories.length} feeds`
       : `Custom mix · ${arxivCategories.length || 1} feeds`;
   }
@@ -926,7 +940,7 @@ function sanitizeCachedFeed(items) {
         safe[key] = typeof item[key] === 'string' ? item[key] : '';
       }
       for (const key of ['tags', 'sources']) safe[key] = Array.isArray(item[key]) ? item[key].filter(value => typeof value === 'string') : [];
-      for (const key of ['stars', 'score']) safe[key] = typeof item[key] === 'number' && Number.isFinite(item[key]) ? item[key] : 0;
+      for (const key of ['stars', 'score', 'upvotes']) safe[key] = typeof item[key] === 'number' && Number.isFinite(item[key]) ? item[key] : 0;
       return safe;
     });
 }
@@ -940,13 +954,14 @@ async function loadArxivFeed() {
   if (categories.length === 0) categories.push('cs.AI');
   // stale-while-revalidate: show cached data first
   const cached = readMatchingArxivCache(categories);
+  const latestVisible = () => arxivSource === 'latest';
   if (cached.length) {
     arxivItems = cached;
-    const rendered = renderArxivItems();
-    arxivStatus.textContent = `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`;
+    const rendered = latestVisible() ? renderArxivItems() : countArxivMatches(arxivItems);
+    setArxivSourceStatus('latest', `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`);
   } else {
-    renderSkeleton(arxivList, 5);
-    arxivStatus.textContent = 'Loading latest papers...';
+    if (latestVisible()) renderSkeleton(arxivList, 5);
+    setArxivSourceStatus('latest', 'Loading latest papers...');
   }
   try {
     const fetchCategory = async (category) => {
@@ -1005,17 +1020,15 @@ async function loadArxivFeed() {
       // arXiv RSS is empty on days without an announcement (weekends, holidays).
       // An empty update keeps the cached papers and their cache entry.
       if (cached.length) {
-        arxivStatus.textContent = coverage.kind === 'partial'
+        setArxivSourceStatus('latest', coverage.kind === 'partial'
           ? `Using cached data · ${coverage.rejected}/${coverage.total} categories failed`
-          : `No new papers in the latest arXiv update · showing ${cached.length} cached papers`;
+          : `No new papers in the latest arXiv update · showing ${cached.length} cached papers`);
       } else {
         arxivItems = [];
-        renderFeedEmpty(arxivList, 'arXiv publishes no new papers on some days, such as weekends and holidays. Check again after the next announcement.', {
-          label: 'Open arXiv', href: 'https://arxiv.org/'
-        });
-        arxivStatus.textContent = coverage.kind === 'partial'
+        if (latestVisible()) renderLatestEmpty();
+        setArxivSourceStatus('latest', coverage.kind === 'partial'
           ? `No papers from available categories · ${coverage.rejected}/${coverage.total} failed`
-          : 'No new papers in the latest arXiv update.';
+          : 'No new papers in the latest arXiv update.');
       }
       return;
     }
@@ -1029,23 +1042,171 @@ async function loadArxivFeed() {
         items: arxivItems.slice(0, MAX_ARXIV_CACHED)
       });
     }
-    const rendered = renderArxivItems();
-    arxivStatus.textContent = coverage.kind === 'partial'
+    const rendered = latestVisible() ? renderArxivItems() : countArxivMatches(arxivItems);
+    setArxivSourceStatus('latest', coverage.kind === 'partial'
       ? `Partial update · ${coverage.fulfilled}/${coverage.total} feeds · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`
-      : `Updated just now · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`;
+      : `Updated just now · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`);
   } catch (error) {
     if (requestVersion !== arxivRequestVersion) return;
     if (!arxivItems.length) {
-      renderFeedEmpty(arxivList, 'Try again, or check the source directly.', {
-        label: 'Open arXiv', href: 'https://arxiv.org/'
-      });
-      setStatusWithRetry(arxivStatus, 'Failed to load arXiv feed.', loadArxivFeed);
+      if (latestVisible()) renderLatestFailure();
+      setArxivSourceStatus('latest', 'Failed to load arXiv feed.', loadArxivFeed);
     } else {
-      arxivStatus.textContent = cached.length
+      setArxivSourceStatus('latest', cached.length
         ? 'Using cached data (refresh failed)'
-        : 'Keeping previous data (refresh failed)';
+        : 'Keeping previous data (refresh failed)');
     }
   }
+}
+
+function renderLatestEmpty() {
+  renderFeedEmpty(arxivList, 'arXiv publishes no new papers on some days, such as weekends and holidays. Check again after the next announcement.', {
+    label: 'Open arXiv', href: 'https://arxiv.org/'
+  });
+}
+
+function renderLatestFailure() {
+  renderFeedEmpty(arxivList, 'Try again, or check the source directly.', {
+    label: 'Open arXiv', href: 'https://arxiv.org/'
+  });
+}
+
+function setArxivSourceStatus(source, text, retry = null) {
+  arxivSourceStatus[source] = { text, retry };
+  if (arxivSource !== source || !arxivStatus) return;
+  if (retry) setStatusWithRetry(arxivStatus, text, retry);
+  else arxivStatus.textContent = text;
+}
+
+function getHfPermissionState() {
+  if (!chrome.permissions?.contains) return Promise.resolve(false);
+  return chrome.permissions.contains({ origins: [LaunchPadCore.HF_DAILY_ORIGIN] }).catch(() => false);
+}
+
+function readHfCache() {
+  const cache = readLocalJson(CACHE_KEYS.hfDaily);
+  if (cache?.version !== 1 || !Array.isArray(cache.items)) return null;
+  const items = sanitizeCachedFeed(cache.items)
+    .map(item => {
+      const arxivId = ArxivResearch.extractArxivId(item.link);
+      return {
+        ...item,
+        arxivId,
+        upvotes: Number.isInteger(item.upvotes) ? Math.max(0, item.upvotes) : 0,
+        githubRepo: ArxivResearch.normalizeGithubRepo(item.githubRepo),
+        hfLink: arxivId ? `${HF_PAPERS_PAGE}/${arxivId}` : ''
+      };
+    })
+    .filter(item => item.arxivId);
+  return { items, fetchedAt: Number(cache.fetchedAt) || 0 };
+}
+
+function applyHfItems(items) {
+  hfItems = items;
+  hfIndex = ArxivResearch.buildHfPaperIndex(items);
+}
+
+async function initHfDaily() {
+  const cache = readHfCache();
+  if (cache?.items.length) applyHfItems(cache.items);
+  if (!await getHfPermissionState()) return;
+  // Badges on the Latest view refresh quietly once the user has granted access.
+  if (hfItems.length && arxivSource === 'latest') renderArxivItems({ keepStatus: true });
+  if (!cache || Date.now() - cache.fetchedAt > HF_CACHE_FRESH_MS) await loadHfDaily();
+}
+
+async function loadHfDaily() {
+  const requestVersion = ++hfRequestVersion;
+  const hfVisible = () => arxivSource === 'hf';
+  if (hfVisible()) {
+    if (hfItems.length) {
+      const rendered = renderArxivItems({ keepStatus: true });
+      setArxivSourceStatus('hf', `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} Hugging Face papers · refreshing...`);
+    } else {
+      renderSkeleton(arxivList, 5);
+      setArxivSourceStatus('hf', 'Loading Hugging Face Daily Papers...');
+    }
+  }
+  try {
+    if (!chrome.runtime?.sendMessage) throw new Error('Extension messaging is unavailable');
+    const result = await chrome.runtime.sendMessage({ type: 'fetchHfDaily', url: HF_DAILY_URL });
+    if (!result || !result.ok) throw new Error(result?.error || 'Fetch failed');
+    const items = ArxivResearch.parseHfDailyPapers(JSON.parse(result.text));
+    if (requestVersion !== hfRequestVersion) return;
+    applyHfItems(items);
+    writeLocalJson(CACHE_KEYS.hfDaily, { version: 1, fetchedAt: Date.now(), items });
+    if (hfVisible()) {
+      if (!items.length) {
+        renderFeedEmpty(arxivList, 'Hugging Face has no daily papers right now.', { label: 'Open Hugging Face', href: HF_PAPERS_PAGE });
+        setArxivSourceStatus('hf', 'No Hugging Face papers yet today.');
+        return;
+      }
+      const rendered = renderArxivItems({ keepStatus: true });
+      setArxivSourceStatus('hf', `Updated just now · ${rendered.filteredCount} matches from ${rendered.totalCount} Hugging Face papers`);
+    } else {
+      arxivSourceStatus.hf = null;
+      if (arxivItems.length) renderArxivItems({ keepStatus: true });
+    }
+  } catch (error) {
+    if (requestVersion !== hfRequestVersion) return;
+    const message = /permission/i.test(error.message || '')
+      ? 'Hugging Face access was not granted.'
+      : 'Failed to load Hugging Face papers.';
+    if (!hfItems.length) {
+      if (hfVisible()) {
+        renderFeedEmpty(arxivList, 'Try again, or open Hugging Face Daily Papers directly.', { label: 'Open Hugging Face', href: HF_PAPERS_PAGE });
+      }
+      setArxivSourceStatus('hf', message, () => selectArxivSource('hf', { refresh: true }));
+    } else {
+      setArxivSourceStatus('hf', `Using cached Hugging Face data (${message.replace(/\.$/, '').toLowerCase()})`);
+    }
+  }
+}
+
+function renderArxivSourceSwitch() {
+  document.querySelectorAll('#arxivSourceSwitch [data-source]').forEach(button => {
+    const active = button.dataset.source === arxivSource;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+}
+
+function showArxivSource(source) {
+  arxivSource = source;
+  renderArxivSourceSwitch();
+  updateArxivResearchContext();
+  const status = arxivSourceStatus[source];
+  const items = source === 'hf' ? hfItems : arxivItems;
+  if (items.length) renderArxivItems({ keepStatus: Boolean(status) });
+  else if (source === 'hf' || /^Loading/.test(status?.text || '')) renderSkeleton(arxivList, 5);
+  else if (status?.retry) renderLatestFailure();
+  else renderLatestEmpty();
+  if (status) setArxivSourceStatus(source, status.text, status.retry);
+}
+
+function selectArxivSource(source, { refresh = false } = {}) {
+  if (source !== 'hf') {
+    showArxivSource('latest');
+    return;
+  }
+  // Request immediately from the click call stack so Chrome retains the user gesture.
+  const permission = chrome.permissions?.request
+    ? chrome.permissions.request({ origins: [LaunchPadCore.HF_DAILY_ORIGIN] }).catch(() => false)
+    : Promise.resolve(false);
+  void permission.then(granted => {
+    if (!granted) {
+      if (arxivStatus) arxivStatus.textContent = 'HF Hot needs access to huggingface.co. Click HF Hot again to allow it.';
+      return;
+    }
+    showArxivSource('hf');
+    const cache = readHfCache();
+    if (refresh || !hfItems.length || !cache || Date.now() - cache.fetchedAt > HF_CACHE_FRESH_MS) {
+      void loadHfDaily();
+    } else if (!arxivSourceStatus.hf) {
+      const rendered = renderArxivItems({ keepStatus: true });
+      setArxivSourceStatus('hf', `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} Hugging Face papers`);
+    }
+  });
 }
 
 function getArxivSummary(value) {
@@ -1066,7 +1227,26 @@ function formatArxivDate(value) {
   }).format(timestamp);
 }
 
-function renderArxivItems() {
+function filterArxivSourceItems(items) {
+  return items.filter(item => FilterQuery.matchesFilterAst(
+    lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)} ${item.authors || ''}`
+  ));
+}
+
+function countArxivMatches(items) {
+  return { filteredCount: filterArxivSourceItems(items).length, totalCount: items.length };
+}
+
+function buildArxivCardActions(hfPaper) {
+  if (!hfPaper) return '';
+  const links = [`<a class="research-card-action" href="${escapeHtml(hfPaper.hfLink)}" target="_blank" rel="noopener" aria-label="Hugging Face discussion, ${hfPaper.upvotes} upvotes">▲ ${hfPaper.upvotes} on HF</a>`];
+  if (hfPaper.githubRepo) {
+    links.push(`<a class="research-card-action" href="${escapeHtml(hfPaper.githubRepo)}" target="_blank" rel="noopener">Code</a>`);
+  }
+  return `<div class="research-card-actions">${links.join('')}</div>`;
+}
+
+function renderArxivItems({ keepStatus = false } = {}) {
   if (!arxivList || !arxivStatus) return { filteredCount: 0, totalCount: 0 };
   const parsed = FilterQuery.parseFilterQuery(arxivFilter, arxivFilterModeValue);
   const error = document.getElementById('arxivFilterError');
@@ -1074,47 +1254,62 @@ function renderArxivItems() {
   arxivFilterInput?.setAttribute('aria-invalid', parsed.ok ? 'false' : 'true');
   if (parsed.ok) lastValidFilter = { query: arxivFilter.trim(), mode: arxivFilterModeValue, ast: parsed.ast };
   const trimmed = lastValidFilter.query;
-  const filtered = arxivItems.filter(item => FilterQuery.matchesFilterAst(
-    lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)} ${item.authors || ''}`
-  ));
+  const hfMode = arxivSource === 'hf';
+  const sourceItems = hfMode ? hfItems : arxivItems;
+  const sourceLabel = hfMode ? 'Hugging Face papers' : 'papers';
+  const filtered = filterArxivSourceItems(sourceItems);
   arxivList.innerHTML = '';
   if (filtered.length === 0) {
-    arxivStatus.textContent = 'No papers match the filter.';
+    if (!keepStatus) setArxivSourceStatus(arxivSource, 'No papers match the filter.');
     renderFeedEmpty(arxivList, trimmed ? 'Try a broader query or clear the current filter.' : 'No papers available yet.',
       trimmed ? { label: 'Clear filter', run: () => arxivFilterClear.click() } : null);
-    return { filteredCount: 0, totalCount: arxivItems.length };
+    return { filteredCount: 0, totalCount: sourceItems.length };
   }
   const visible = filtered.slice(0, MAX_ARXIV_RENDERED);
   const shownLabel = visible.length < filtered.length ? `top ${visible.length} of ${filtered.length}` : `${filtered.length}`;
-  arxivStatus.textContent = trimmed
-    ? `Showing ${shownLabel} matches from ${arxivItems.length} papers`
-    : `Showing ${shownLabel} papers`;
+  if (!keepStatus) {
+    setArxivSourceStatus(arxivSource, trimmed
+      ? `Showing ${shownLabel} matches from ${sourceItems.length} ${sourceLabel}`
+      : `Showing ${shownLabel} ${sourceLabel}`);
+  }
   visible.forEach((item, index) => {
-    const entry = document.createElement('a');
+    const hfPaper = hfMode ? item : hfIndex.get(ArxivResearch.extractArxivId(item.link));
+    const actions = buildArxivCardActions(hfPaper);
+    // Cards with secondary links use a stretched title link to avoid nesting anchors.
+    const entry = document.createElement(actions ? 'div' : 'a');
     entry.className = 'panel-item research-card';
-    entry.href = item.link;
-    entry.target = '_blank';
-    entry.rel = 'noopener';
+    if (actions) {
+      entry.classList.add('has-actions');
+    } else {
+      entry.href = item.link;
+      entry.target = '_blank';
+      entry.rel = 'noopener';
+    }
     entry.role = 'listitem';
     entry.style.setProperty('--item-index', String(Math.min(index, 12)));
     const summary = getArxivSummary(item.description);
     const matchedTracks = ArxivResearch.matchArxivResearchTracks(item);
     const reason = matchedTracks.length
       ? matchedTracks.map(track => track.label).join(' · ')
-      : 'Custom research filter';
+      : (hfMode ? 'Trending on Hugging Face' : 'Custom research filter');
     const authors = ArxivResearch.formatArxivAuthors(item.authors);
-    const announceLabel = ArxivResearch.getArxivAnnounceLabel(item.announceType);
-    const meta = ['arXiv', item.category, announceLabel, formatArxivDate(item.pubDate)].filter(Boolean);
+    const meta = hfMode
+      ? ['Hugging Face Daily', formatArxivDate(item.pubDate)].filter(Boolean)
+      : ['arXiv', item.category, ArxivResearch.getArxivAnnounceLabel(item.announceType), formatArxivDate(item.pubDate)].filter(Boolean);
+    const title = actions
+      ? `<a class="research-card-link" href="${escapeHtml(item.link)}" target="_blank" rel="noopener">${escapeHtml(item.title)}</a>`
+      : escapeHtml(item.title);
     entry.innerHTML = `
-      <div class="panel-item-title research-card-title">${escapeHtml(item.title)}</div>
+      <div class="panel-item-title research-card-title">${title}</div>
       ${authors ? `<div class="research-card-authors">${escapeHtml(authors)}</div>` : ''}
       ${summary ? `<div class="panel-item-desc research-card-desc">${escapeHtml(summary)}</div>` : ''}
       <div class="panel-item-meta research-card-meta">${meta.map(escapeHtml).join(' · ')}</div>
       <div class="panel-item-reason research-card-reason">${escapeHtml(reason)}</div>
+      ${actions}
     `;
     arxivList.appendChild(entry);
   });
-  return { filteredCount: filtered.length, totalCount: arxivItems.length };
+  return { filteredCount: filtered.length, totalCount: sourceItems.length };
 }
 
 function updateScourSource() {
@@ -2226,6 +2421,12 @@ if (arxivApplyRefreshBtn) {
     applyArxivControls();
   });
 }
+
+document.getElementById('arxivSourceSwitch')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-source]');
+  if (!button || button.dataset.source === arxivSource) return;
+  selectArxivSource(button.dataset.source);
+});
 
 arxivChips.forEach(chip => {
   chip.addEventListener('click', () => {

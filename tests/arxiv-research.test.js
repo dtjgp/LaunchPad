@@ -4,12 +4,47 @@ const assert = require('node:assert/strict');
 const {
   ARXIV_RESEARCH_TRACKS,
   buildArxivResearchPreset,
+  buildHfPaperIndex,
+  extractArxivId,
   findMatchingArxivResearchTrack,
   formatArxivAuthors,
   matchArxivResearchTracks,
   normalizeArxivAnnounceType,
+  normalizeGithubRepo,
+  parseHfDailyPapers,
   rankArxivItems
 } = require('../arxiv-research.js');
+
+test('parseHfDailyPapers normalizes, dedupes and ranks Hugging Face papers by upvotes', () => {
+  const items = parseHfDailyPapers([
+    { paper: { id: '2611.00001', title: ' Low  ', summary: 'abstract', upvotes: 2, authors: [{ name: 'A' }, { name: ' ' }, {}] } },
+    { paper: { id: '2611.00002', title: 'High', ai_summary: 'short', summary: 'long', upvotes: 40,
+      githubRepo: 'https://github.com/org/repo.git', submittedOnDailyAt: '2026-11-20T00:00:00Z' } },
+    { paper: { id: '2611.00002', title: 'Duplicate', upvotes: 99 } },
+    { paper: { id: 'not-arxiv', title: 'Bad id', upvotes: 100 } },
+    { paper: { id: '2611.00003', title: 'Unsafe repo', upvotes: -1, githubRepo: 'javascript:alert(1)' } },
+    null
+  ]);
+  assert.deepEqual(items.map(item => item.arxivId), ['2611.00002', '2611.00001', '2611.00003']);
+  assert.equal(items[0].description, 'short');
+  assert.equal(items[0].githubRepo, 'https://github.com/org/repo');
+  assert.equal(items[0].link, 'https://arxiv.org/abs/2611.00002');
+  assert.equal(items[1].title, 'Low');
+  assert.equal(items[1].authors, 'A');
+  assert.equal(items[2].upvotes, 0);
+  assert.equal(items[2].githubRepo, '');
+  assert.throws(() => parseHfDailyPapers({ error: 'x' }), /unexpected/);
+});
+
+test('arXiv ids match across abs/pdf links and versions for HF badges', () => {
+  assert.equal(extractArxivId('https://arxiv.org/abs/2611.26211v2'), '2611.26211');
+  assert.equal(extractArxivId('https://arxiv.org/pdf/2611.2621'), '2611.2621');
+  assert.equal(extractArxivId('https://example.com/abs/2611.26211'), '');
+  const index = buildHfPaperIndex([{ arxivId: '2611.26211', upvotes: 5 }]);
+  assert.equal(index.get(extractArxivId('https://arxiv.org/abs/2611.26211v1')).upvotes, 5);
+  assert.equal(normalizeGithubRepo('https://github.com/org'), '');
+  assert.equal(normalizeGithubRepo('http://github.com/org/repo'), '');
+});
 
 test('defines the four requested research tracks with the required arXiv domains', () => {
   assert.deepEqual(

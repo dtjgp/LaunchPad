@@ -21,6 +21,8 @@ const test = base.extend({
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     await worker.evaluate(() => {
       globalThis.fixtureMode = 'populated';
+      const fixtureCategories = ['cs.AI', 'cs.LG', 'cs.CV', 'cs.NI', 'eess.SP', 'cs.IT', 'eess.SY', 'cs.RO', 'cs.CL'];
+      const fixtureArxivId = (category, index) => `2609.${Math.max(0, fixtureCategories.indexOf(category)) + 10}${index}0`;
       globalThis.fetch = async value => {
         const url = new URL(value);
         if (fixtureMode === 'failed') throw new Error('Fixture: network unavailable');
@@ -45,12 +47,22 @@ const test = base.extend({
             'Semantic communication for wireless learning', 'Demand response and dynamic pricing'];
           return new Response(`<rss xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>${topics.map((title, index) => `<item>
             <title>[Test fixture] ${title}</title>
-            <link>https://example.org/papers/${category}/${index}</link>
+            <link>https://arxiv.org/abs/${fixtureArxivId(category, index)}</link>
             <dc:creator>Ada Fixture, Grace Fixture, Alan Fixture, Barbara Fixture</dc:creator>
             <arxiv:announce_type>${index === 0 ? 'replace' : 'new'}</arxiv:announce_type>
             <pubDate>Mon, 07 Sep 2026 08:00:00 GMT</pubDate>
             <description>Test data for UI verification. This research description covers ${title.toLowerCase()} with reproducible experiments and clear evaluation boundaries.</description>
           </item>`).join('')}</channel></rss>`);
+        }
+        if (url.hostname === 'huggingface.co' && url.pathname === '/api/daily_papers') {
+          return new Response(JSON.stringify([
+            { title: '[Test fixture] Edge AI community favourite', upvotes: 12, paper: { id: '2609.99990', title: '[Test fixture] Edge AI community favourite',
+              summary: 'Test data for the HF ranking.', authors: [{ name: 'Hugo Fixture' }], publishedAt: '2026-09-07T08:00:00Z', upvotes: 12 } },
+            { title: '[Test fixture] Structured pruning for edge AI', upvotes: 42, paper: { id: fixtureArxivId('cs.AI', 0),
+              title: '[Test fixture] Structured pruning for edge AI', summary: 'Test data matched to an arXiv card.',
+              authors: [{ name: 'Ada Fixture' }], publishedAt: '2026-09-07T08:00:00Z', upvotes: 42,
+              githubRepo: 'https://github.com/fixture-lab/pruning' } }
+          ]));
         }
         if (url.hostname === 'scour.ing') {
           return new Response(Array.from({ length: 12 }, (_, index) => `<article data-item="post" data-post-title="[Test fixture] Research reading list ${index + 1}">
