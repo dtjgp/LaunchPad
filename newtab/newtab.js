@@ -95,7 +95,8 @@ let scourItems = [];
 let scourRendered = 0;
 let scourLoadingMore = false;
 const SCOUR_BATCH_SIZE = 10;
-const MAX_ARXIV_ITEMS = 120;
+const MAX_ARXIV_RENDERED = 120;
+const MAX_ARXIV_CACHED = 1000;
 let groupDragIndex = null;
 let arxivRequestVersion = 0;
 let previewRequestVersion = 0;
@@ -131,7 +132,7 @@ const defaultArxivFilters = [
 
 // escapeHtml, safeColor, defaultSites are provided by shared.js
 
-const ARXIV_FEED_BASE = 'https://export.arxiv.org/rss/';
+const ARXIV_FEED_BASE = 'https://rss.arxiv.org/rss/';
 // Existing cached installations keep their previously displayed public feed.
 const LEGACY_SCOUR_URL = 'https://scour.ing/@dtjgp';
 
@@ -921,7 +922,7 @@ function sanitizeCachedFeed(items) {
   return items.filter(item => item && typeof item.title === 'string' && LaunchPadCore.normalizeHttpUrl(item.link))
     .map(item => {
       const safe = { ...item, link: LaunchPadCore.normalizeHttpUrl(item.link) };
-      for (const key of ['description', 'desc', 'pubDate', 'category', 'time', 'reason', 'language', 'license', 'sourceLabel']) {
+      for (const key of ['description', 'desc', 'pubDate', 'category', 'time', 'reason', 'language', 'license', 'sourceLabel', 'authors', 'announceType']) {
         safe[key] = typeof item[key] === 'string' ? item[key] : '';
       }
       for (const key of ['tags', 'sources']) safe[key] = Array.isArray(item[key]) ? item[key].filter(value => typeof value === 'string') : [];
@@ -968,14 +969,23 @@ async function loadArxivFeed() {
       if (doc.querySelector('parsererror') || !['rss', 'rdf'].includes(doc.documentElement?.localName.toLowerCase()) || !doc.querySelector('channel')) {
         throw new Error('The source did not return a valid RSS feed');
       }
+      const readNamespaced = (item, namespace, name) =>
+        item.getElementsByTagNameNS(namespace, name)[0]?.textContent?.trim() || '';
       return Array.from(doc.querySelectorAll('item'))
-        .map(item => ({
-          title: item.querySelector('title')?.textContent?.trim() || 'Untitled',
-          link: LaunchPadCore.normalizeHttpUrl(item.querySelector('link')?.textContent?.trim() || ''),
-          pubDate: item.querySelector('pubDate')?.textContent?.trim() || '',
-          description: item.querySelector('description')?.textContent?.trim() || '',
-          category
-        }))
+        .map(item => {
+          const description = item.querySelector('description')?.textContent?.trim() || '';
+          return {
+            title: item.querySelector('title')?.textContent?.trim() || 'Untitled',
+            link: LaunchPadCore.normalizeHttpUrl(item.querySelector('link')?.textContent?.trim() || ''),
+            pubDate: item.querySelector('pubDate')?.textContent?.trim() || '',
+            description,
+            authors: readNamespaced(item, 'http://purl.org/dc/elements/1.1/', 'creator'),
+            announceType: ArxivResearch.normalizeArxivAnnounceType(
+              readNamespaced(item, 'http://arxiv.org/schemas/atom', 'announce_type'), description
+            ),
+            category
+          };
+        })
         .filter(item => item.link);
     };
     const results = await Promise.allSettled(categories.map(fetchCategory));
@@ -1009,14 +1019,14 @@ async function loadArxivFeed() {
       }
       return;
     }
-    merged.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-    arxivItems = merged.slice(0, MAX_ARXIV_ITEMS);
+    // Keep the full announcement so later filter changes search every paper, not a truncated subset.
+    arxivItems = ArxivResearch.rankArxivItems(merged);
     if (coverage.kind === 'complete') {
       writeLocalJson(CACHE_KEYS.arxiv, {
         version: 2,
         categories: [...categories],
         fetchedAt: Date.now(),
-        items: arxivItems
+        items: arxivItems.slice(0, MAX_ARXIV_CACHED)
       });
     }
     const rendered = renderArxivItems();
@@ -1064,7 +1074,9 @@ function renderArxivItems() {
   arxivFilterInput?.setAttribute('aria-invalid', parsed.ok ? 'false' : 'true');
   if (parsed.ok) lastValidFilter = { query: arxivFilter.trim(), mode: arxivFilterModeValue, ast: parsed.ast };
   const trimmed = lastValidFilter.query;
-  const filtered = arxivItems.filter(item => FilterQuery.matchesFilterAst(lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)}`));
+  const filtered = arxivItems.filter(item => FilterQuery.matchesFilterAst(
+    lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)} ${item.authors || ''}`
+  ));
   arxivList.innerHTML = '';
   if (filtered.length === 0) {
     arxivStatus.textContent = 'No papers match the filter.';
@@ -1072,10 +1084,12 @@ function renderArxivItems() {
       trimmed ? { label: 'Clear filter', run: () => arxivFilterClear.click() } : null);
     return { filteredCount: 0, totalCount: arxivItems.length };
   }
+  const visible = filtered.slice(0, MAX_ARXIV_RENDERED);
+  const shownLabel = visible.length < filtered.length ? `top ${visible.length} of ${filtered.length}` : `${filtered.length}`;
   arxivStatus.textContent = trimmed
-    ? `Showing ${filtered.length} of ${arxivItems.length} papers`
-    : `Showing ${filtered.length} papers`;
-  filtered.forEach((item, index) => {
+    ? `Showing ${shownLabel} matches from ${arxivItems.length} papers`
+    : `Showing ${shownLabel} papers`;
+  visible.forEach((item, index) => {
     const entry = document.createElement('a');
     entry.className = 'panel-item research-card';
     entry.href = item.link;
@@ -1088,10 +1102,14 @@ function renderArxivItems() {
     const reason = matchedTracks.length
       ? matchedTracks.map(track => track.label).join(' · ')
       : 'Custom research filter';
+    const authors = ArxivResearch.formatArxivAuthors(item.authors);
+    const announceLabel = ArxivResearch.getArxivAnnounceLabel(item.announceType);
+    const meta = ['arXiv', item.category, announceLabel, formatArxivDate(item.pubDate)].filter(Boolean);
     entry.innerHTML = `
       <div class="panel-item-title research-card-title">${escapeHtml(item.title)}</div>
+      ${authors ? `<div class="research-card-authors">${escapeHtml(authors)}</div>` : ''}
       ${summary ? `<div class="panel-item-desc research-card-desc">${escapeHtml(summary)}</div>` : ''}
-      <div class="panel-item-meta research-card-meta">arXiv RSS · ${escapeHtml(item.category)} · ${escapeHtml(formatArxivDate(item.pubDate))}</div>
+      <div class="panel-item-meta research-card-meta">${meta.map(escapeHtml).join(' · ')}</div>
       <div class="panel-item-reason research-card-reason">${escapeHtml(reason)}</div>
     `;
     arxivList.appendChild(entry);

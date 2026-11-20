@@ -5,7 +5,10 @@ const {
   ARXIV_RESEARCH_TRACKS,
   buildArxivResearchPreset,
   findMatchingArxivResearchTrack,
-  matchArxivResearchTracks
+  formatArxivAuthors,
+  matchArxivResearchTracks,
+  normalizeArxivAnnounceType,
+  rankArxivItems
 } = require('../arxiv-research.js');
 
 test('defines the four requested research tracks with the required arXiv domains', () => {
@@ -82,4 +85,27 @@ test('recognizes exact presets while leaving custom category/filter combinations
   assert.equal(findMatchingArxivResearchTrack(preset.categories, preset.query, 'all'), '');
   assert.equal(findMatchingArxivResearchTrack(['cs.AI'], 'custom query'), '');
   assert.equal(findMatchingArxivResearchTrack(null, null), '');
+});
+
+test('reads arXiv announce types from the RSS field or the description fallback', () => {
+  assert.equal(normalizeArxivAnnounceType(' Cross '), 'cross');
+  assert.equal(normalizeArxivAnnounceType('', 'arXiv:2611.00001v2 Announce Type: replace-cross \nAbstract: x'), 'replace-cross');
+  assert.equal(normalizeArxivAnnounceType('unknown', 'no marker'), '');
+});
+
+test('ranks new submissions before revisions while keeping feed order within a type', () => {
+  const ranked = rankArxivItems([
+    { id: 'r1', announceType: 'replace' },
+    { id: 'n1', announceType: 'new' },
+    { id: 'u1', announceType: '' },
+    { id: 'c1', announceType: 'cross' },
+    { id: 'n2', announceType: 'new' }
+  ]);
+  assert.deepEqual(ranked.map(item => item.id), ['n1', 'n2', 'c1', 'r1', 'u1']);
+});
+
+test('shortens long author lists', () => {
+  assert.equal(formatArxivAuthors('Ada Lovelace,  Alan Turing'), 'Ada Lovelace, Alan Turing');
+  assert.equal(formatArxivAuthors('A, B, C, D'), 'A, B, C et al.');
+  assert.equal(formatArxivAuthors(''), '');
 });

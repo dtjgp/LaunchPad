@@ -77,11 +77,11 @@ test('background returns a validated response body', async () => {
 
   const response = await sendMessage(listener, {
     type: 'fetchArxiv',
-    url: 'https://export.arxiv.org/rss/cs.AI'
+    url: 'https://rss.arxiv.org/rss/cs.AI'
   });
 
   assert.equal(response.ok, true);
-  assert.equal(response.text, 'from:https://export.arxiv.org/rss/cs.AI');
+  assert.equal(response.text, 'from:https://rss.arxiv.org/rss/cs.AI');
 });
 
 test('background accepts only the Academic Trend API route', async () => {
@@ -179,7 +179,7 @@ test('streamed bodies are stopped at the byte limit even without Content-Length'
       cancel: async () => { cancelled = true; }, releaseLock: () => { released = true; }
     }) }
   }));
-  const response = await sendMessage(listener, { type: 'fetchArxiv', url: 'https://export.arxiv.org/rss/cs.AI' });
+  const response = await sendMessage(listener, { type: 'fetchArxiv', url: 'https://rss.arxiv.org/rss/cs.AI' });
   assert.equal(response.ok, false);
   assert.equal(cancelled, true);
   assert.equal(released, true);

@@ -127,9 +127,13 @@ for (const mode of ['failed', 'empty', 'partial']) {
 test('cached papers stay visible when refresh fails and zero-match filters offer recovery', async ({ page, worker, extensionId }) => {
   await openNewTab(page, extensionId);
   await expect(page.locator('#arxivStatus')).toContainText('Updated');
+  const firstCard = page.locator('#arxivList .research-card').first();
+  await expect(firstCard.locator('.research-card-authors')).toHaveText('Ada Fixture, Grace Fixture, Alan Fixture et al.');
+  await expect(firstCard.locator('.research-card-meta')).toContainText('New');
   await worker.evaluate(() => { globalThis.fixtureMode = 'failed'; });
   await page.reload();
   await expect(page.locator('#arxivStatus')).toContainText('Using cached data (refresh failed)');
+  await expect(firstCard.locator('.research-card-authors')).toBeVisible();
   await expect(page.locator('#scourStatus')).toContainText('refresh failed');
   await expect(page.locator('#arxivList .research-card').first()).toBeVisible();
   await page.locator('.panel-advanced summary').click();

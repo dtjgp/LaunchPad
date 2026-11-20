@@ -30,22 +30,24 @@ const test = base.extend({
             '<title>Just a moment… · Scour</title></head><body><h1>Just a moment…</h1>' +
             '<p id="gate-status" role="status">Checking your browser before continuing.</p></body></html>');
         }
-        if (fixtureMode === 'invalid') return new Response(url.hostname === 'export.arxiv.org'
+        if (fixtureMode === 'invalid') return new Response(url.hostname === 'rss.arxiv.org'
           ? '<html>Source maintenance</html>' : '{"message":"Source maintenance"}');
-        if (fixtureMode === 'partial' && url.hostname === 'export.arxiv.org' && url.pathname.endsWith('cs.CV')) {
+        if (fixtureMode === 'partial' && url.hostname === 'rss.arxiv.org' && url.pathname.endsWith('cs.CV')) {
           throw new Error('Fixture: one category unavailable');
         }
         if (fixtureMode === 'empty') {
           return new Response(url.hostname.includes('github') || url.hostname.includes('ossinsight')
             ? '{"items":[],"data":{"rows":[]}}' : '<rss><channel></channel></rss>');
         }
-        if (url.hostname === 'export.arxiv.org') {
+        if (url.hostname === 'rss.arxiv.org') {
           const category = url.pathname.split('/').pop();
           const topics = ['Structured pruning for edge AI', 'On-device inference and model compression',
             'Semantic communication for wireless learning', 'Demand response and dynamic pricing'];
-          return new Response(`<rss><channel>${topics.map((title, index) => `<item>
+          return new Response(`<rss xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>${topics.map((title, index) => `<item>
             <title>[Test fixture] ${title}</title>
             <link>https://example.org/papers/${category}/${index}</link>
+            <dc:creator>Ada Fixture, Grace Fixture, Alan Fixture, Barbara Fixture</dc:creator>
+            <arxiv:announce_type>${index === 0 ? 'replace' : 'new'}</arxiv:announce_type>
             <pubDate>Mon, 07 Sep 2026 08:00:00 GMT</pubDate>
             <description>Test data for UI verification. This research description covers ${title.toLowerCase()} with reproducible experiments and clear evaluation boundaries.</description>
           </item>`).join('')}</channel></rss>`);

@@ -23,7 +23,7 @@
     "favicon"
   ],
   "host_permissions": [
-    "https://export.arxiv.org/*",
+    "https://rss.arxiv.org/*",
     "https://scour.ing/*",
     "https://www.scour.ing/*",
     "https://api.ossinsight.io/*",

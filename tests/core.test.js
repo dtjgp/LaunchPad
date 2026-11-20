@@ -160,7 +160,7 @@ test('normalizeHttpUrl rejects unsafe schemes and credential-bearing URLs', () =
 
 test('validateFetchTarget binds message types to intended hosts', () => {
   assert.equal(
-    validateFetchTarget('fetchArxiv', 'https://export.arxiv.org/rss/cs.AI').ok,
+    validateFetchTarget('fetchArxiv', 'https://rss.arxiv.org/rss/cs.AI').ok,
     true
   );
   assert.equal(
@@ -205,7 +205,11 @@ test('validateFetchTarget binds message types to intended hosts', () => {
     false
   );
   assert.equal(
-    validateFetchTarget('fetchArxiv', 'https://export.arxiv.org/api/query').ok,
+    validateFetchTarget('fetchArxiv', 'https://rss.arxiv.org/api/query').ok,
+    false
+  );
+  assert.equal(
+    validateFetchTarget('fetchArxiv', 'https://export.arxiv.org/rss/cs.AI').ok,
     false
   );
 });

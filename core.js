@@ -11,7 +11,7 @@
   const MAX_SUGGESTIONS = 7;
   const FETCH_RULES = {
     fetchArxiv(url) {
-      return url.hostname === 'export.arxiv.org' && url.pathname.startsWith('/rss/');
+      return url.hostname === 'rss.arxiv.org' && url.pathname.startsWith('/rss/');
     },
     fetchScour(url) {
       return url.hostname === 'scour.ing' || url.hostname === 'www.scour.ing';

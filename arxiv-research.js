@@ -104,6 +104,38 @@
       .map(cloneTrack);
   }
 
+  const ANNOUNCE_TYPE_PRIORITY = { new: 0, cross: 1, replace: 2, 'replace-cross': 3 };
+  const ANNOUNCE_TYPE_LABELS = { new: 'New', cross: 'Cross-list', replace: 'Updated', 'replace-cross': 'Updated cross-list' };
+
+  // arXiv RSS exposes <arxiv:announce_type>; the description repeats it as a fallback.
+  function normalizeArxivAnnounceType(value, description = '') {
+    const direct = String(value || '').trim().toLowerCase();
+    if (Object.hasOwn(ANNOUNCE_TYPE_PRIORITY, direct)) return direct;
+    const match = String(description || '').match(/Announce Type:\s*([a-z-]+)/i);
+    const fromDescription = match ? match[1].toLowerCase() : '';
+    return Object.hasOwn(ANNOUNCE_TYPE_PRIORITY, fromDescription) ? fromDescription : '';
+  }
+
+  function getArxivAnnounceLabel(type) {
+    return ANNOUNCE_TYPE_LABELS[type] || '';
+  }
+
+  // New submissions first, then cross-lists, then revisions; ties keep the feed order.
+  function rankArxivItems(items) {
+    if (!Array.isArray(items)) return [];
+    const priority = item => ANNOUNCE_TYPE_PRIORITY[item?.announceType] ?? 4;
+    return items
+      .map((item, index) => ({ item, index }))
+      .sort((left, right) => priority(left.item) - priority(right.item) || left.index - right.index)
+      .map(entry => entry.item);
+  }
+
+  function formatArxivAuthors(value, max = 3) {
+    const authors = String(value || '').split(',').map(author => author.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    if (authors.length <= max) return authors.join(', ');
+    return `${authors.slice(0, max).join(', ')} et al.`;
+  }
+
   function sameCategories(left, right) {
     if (!Array.isArray(left) || !Array.isArray(right)) return false;
     const normalizedLeft = Array.from(new Set(left.filter(value => typeof value === 'string'))).sort();
@@ -125,6 +157,10 @@
     ARXIV_RESEARCH_TRACKS,
     buildArxivResearchPreset,
     findMatchingArxivResearchTrack,
-    matchArxivResearchTracks
+    formatArxivAuthors,
+    getArxivAnnounceLabel,
+    matchArxivResearchTracks,
+    normalizeArxivAnnounceType,
+    rankArxivItems
   };
 });
