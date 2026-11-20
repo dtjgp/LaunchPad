@@ -519,6 +519,15 @@ body.newtab-page {
   color: var(--text);
 }
 
+.research-card-authors {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .research-card-desc {
   font-size: var(--body-small-size);
   color: var(--muted);
@@ -540,6 +549,150 @@ body.newtab-page {
   font-size: var(--label-medium-size);
   color: var(--muted);
   line-height: 1.5;
+}
+
+.research-card.has-actions {
+  position: relative;
+}
+
+.research-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Stretch the title link over the card; secondary actions sit above it. */
+.research-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.research-card.has-actions:has(.research-card-link:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.research-card-link:focus-visible {
+  outline: none;
+}
+
+.research-card-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.research-card-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.research-card-action:hover {
+  background: var(--blue-subtle);
+}
+
+button.research-card-action {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.research-card-action.active {
+  border-color: var(--blue);
+  background: var(--blue-subtle);
+}
+
+.research-card-action.error {
+  color: var(--danger);
+}
+
+.source-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.source-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.source-switch-btn {
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.source-switch-btn:hover {
+  color: var(--text);
+}
+
+.source-switch-btn.active {
+  background: var(--blue-subtle);
+  color: var(--blue);
+}
+
+.trend-area-filter {
+  min-height: 28px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.source-filter-toggle {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.source-filter-toggle[hidden] {
+  display: none;
+}
+
+.source-filter-toggle:hover {
+  color: var(--text);
+}
+
+.source-filter-toggle.active {
+  border-color: var(--blue);
+  background: var(--blue-subtle);
+  color: var(--blue);
 }
 
 /* === LaunchPad product masthead === */
@@ -869,6 +1022,55 @@ body.newtab-page {
 .layout.show-favorites .favorite-panel {
   display: flex;
   animation: panel-enter-right 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.panel-updated {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.panel-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.panel-refresh:hover {
+  color: var(--blue);
+  background: var(--blue-subtle);
+}
+
+.panel-refresh:disabled {
+  cursor: progress;
+}
+
+.panel-refresh[aria-busy="true"] svg {
+  animation: panel-refresh-spin 900ms linear infinite;
+}
+
+@keyframes panel-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-refresh[aria-busy="true"] svg { animation: none; }
 }
 
 .panel-link {

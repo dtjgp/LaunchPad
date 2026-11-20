@@ -19,6 +19,9 @@ const settingsPanel = document.getElementById('settingsPanel');
 const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 const settingsStatus = document.getElementById('settingsStatus');
 const avatarUrlInput = document.getElementById('avatarUrlInput');
+const googleAvatarConnectBtn = document.getElementById('googleAvatarConnectBtn');
+const googleAvatarDisconnectBtn = document.getElementById('googleAvatarDisconnectBtn');
+const googleAvatarStateEl = document.getElementById('googleAvatarState');
 const appsList = document.getElementById('appsList');
 const accountList = document.getElementById('accountList');
 const appNameInput = document.getElementById('appNameInput');
@@ -95,11 +98,37 @@ let scourItems = [];
 let scourRendered = 0;
 let scourLoadingMore = false;
 const SCOUR_BATCH_SIZE = 10;
-const MAX_ARXIV_ITEMS = 120;
+const MAX_ARXIV_RENDERED = 120;
+const MAX_ARXIV_CACHED = 1000;
 let groupDragIndex = null;
 let arxivRequestVersion = 0;
+// 'latest' shows the arXiv RSS announcement; 'hf' shows Hugging Face Daily Papers by upvotes.
+let arxivSource = 'latest';
+let hfItems = [];
+const panelUpdatedAt = { latest: 0, hf: 0, saved: 0, scour: 0, trend: 0 };
+const HF_FILTER_PREF_KEY = 'pref_hf_apply_filter';
+let hfApplyFilter = readLocalJson(HF_FILTER_PREF_KEY) === true;
+let hfIndex = new Map();
+let hfRequestVersion = 0;
+const arxivSourceStatus = { latest: null, hf: null, saved: null };
+const TREND_WINDOW_PREF_KEY = 'pref_trend_window';
+const TREND_AREA_PREF_KEY = 'pref_trend_area';
+const TREND_DISPLAY_LIMIT = 10;
+let trendWindowId = AcademicTrend.getTrendWindow(readLocalJson(TREND_WINDOW_PREF_KEY)).id;
+let trendArea = typeof readLocalJson(TREND_AREA_PREF_KEY) === 'string' ? readLocalJson(TREND_AREA_PREF_KEY) : '';
+let trendItems = [];
+let trendRequestVersion = 0;
+// Read-later papers stay in chrome.storage.local on this device only.
+const READING_LIST_KEY = 'readingList';
+const MAX_READING_LIST = 200;
+let readingList = [];
+const renderedArxivItems = new Map();
 let previewRequestVersion = 0;
 let avatarRequestVersion = 0;
+let googleAvatarUrl = '';
+let googleAvatarState = 'off';
+let googleAvatarRequestVersion = 0;
+let googleSignInWatched = false;
 
 const LOG_STORAGE_KEY = 'logs';
 const MAX_LOGS = 200;
@@ -131,15 +160,20 @@ const defaultArxivFilters = [
 
 // escapeHtml, safeColor, defaultSites are provided by shared.js
 
-const ARXIV_FEED_BASE = 'https://export.arxiv.org/rss/';
+const ARXIV_FEED_BASE = 'https://rss.arxiv.org/rss/';
 // Existing cached installations keep their previously displayed public feed.
 const LEGACY_SCOUR_URL = 'https://scour.ing/@dtjgp';
 
 const CACHE_KEYS = {
   arxiv: 'cache_arxiv',
   scour: 'cache_scour',
-  academicTrend: 'cache_academic_trend_v1'
+  academicTrend: 'cache_academic_trend_v1',
+  hfDaily: 'cache_hf_daily_v1'
 };
+
+const HF_DAILY_URL = 'https://huggingface.co/api/daily_papers?limit=100';
+const HF_PAPERS_PAGE = 'https://huggingface.co/papers';
+const HF_CACHE_FRESH_MS = 30 * 60 * 1000;
 
 function renderSkeleton(container, count = 4) {
   container.innerHTML = '';
@@ -151,6 +185,33 @@ function renderSkeleton(container, count = 4) {
       <div class="skeleton-line short"></div>
     `;
     container.appendChild(item);
+  }
+}
+
+function renderPanelUpdated() {
+  const labels = { arxivUpdated: panelUpdatedAt[arxivSource], scourUpdated: panelUpdatedAt.scour, trendUpdated: panelUpdatedAt.trend };
+  for (const [id, timestamp] of Object.entries(labels)) {
+    const label = document.getElementById(id);
+    if (!label) continue;
+    label.textContent = LaunchPadCore.formatUpdatedAgo(timestamp);
+    label.title = timestamp ? new Date(timestamp).toLocaleString() : '';
+  }
+}
+
+function markPanelUpdated(key, timestamp = Date.now()) {
+  panelUpdatedAt[key] = Number(timestamp) || 0;
+  renderPanelUpdated();
+}
+
+async function runPanelRefresh(button, refresh) {
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    await refresh();
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
   }
 }
 
@@ -377,6 +438,11 @@ async function init() {
   settingsWriter = LaunchPadCore.createSettingsWriter(chrome.storage, { ...buildSettingsSnapshot(), ...restoredSettings });
   applyTheme();
   applyAvatar();
+  void syncGoogleAvatar();
+  // Re-check when the tab is shown again so a changed Google picture follows quickly.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && ['connected', 'stale'].includes(googleAvatarState)) void syncGoogleAvatar();
+  });
   render();
   renderMenus();
   applyArxivControls();
@@ -384,6 +450,8 @@ async function init() {
   setPanelOpen('favorites', panelVisibility.favorites);
   void search.refreshSuggestionPermission();
   loadArxivFeed();
+  void initHfDaily();
+  void loadReadingList();
   loadScourFeed();
   loadAcademicTrend();
 }
@@ -605,28 +673,184 @@ function renderAvatarFallback() {
   avatarBtn.setAttribute('aria-label', 'Google account links');
 }
 
+// The Google account picture (when connected) wins; a custom URL is the fallback.
 function applyAvatar() {
-  const resolvedAvatarUrl = LaunchPadCore.resolveAvatarUrl(avatarUrl);
+  const candidates = [...new Set([
+    LaunchPadCore.resolveAvatarUrl(googleAvatarUrl),
+    LaunchPadCore.resolveAvatarUrl(avatarUrl)
+  ].filter(Boolean))];
   const requestVersion = ++avatarRequestVersion;
-  if (!resolvedAvatarUrl) {
-    renderAvatarFallback();
+  const tryAvatar = index => {
+    const resolvedAvatarUrl = candidates[index];
+    if (!resolvedAvatarUrl) {
+      renderAvatarFallback();
+      return;
+    }
+    const avatarImage = new Image();
+    avatarImage.onload = () => {
+      if (requestVersion !== avatarRequestVersion) return;
+      avatarBtn.style.backgroundImage = `url("${resolvedAvatarUrl.replace(/["\\]/g, '')}")`;
+      avatarBtn.classList.add('has-image');
+      avatarBtn.textContent = '';
+      avatarBtn.title = 'Google account links';
+      avatarBtn.setAttribute('aria-label', 'Google account links');
+    };
+    avatarImage.onerror = () => {
+      if (requestVersion !== avatarRequestVersion) return;
+      tryAvatar(index + 1);
+    };
+    avatarImage.src = resolvedAvatarUrl;
+  };
+  tryAvatar(0);
+}
+
+function setGoogleAvatarState(state, message = '') {
+  googleAvatarState = state;
+  const configured = state !== 'unconfigured';
+  const connected = ['connected', 'stale', 'loading'].includes(state);
+  if (googleAvatarConnectBtn) {
+    googleAvatarConnectBtn.disabled = !configured || state === 'loading';
+    googleAvatarConnectBtn.textContent = connected ? 'Refresh picture' : 'Use Google account picture';
+  }
+  if (googleAvatarDisconnectBtn) googleAvatarDisconnectBtn.hidden = !connected && state !== 'error';
+  if (!googleAvatarStateEl) return;
+  googleAvatarStateEl.textContent = message || {
+    unconfigured: 'Not configured in this build: add a Google OAuth client ID to manifest.json (see README).',
+    off: 'Off. LaunchPad does not read your Google profile.',
+    loading: 'Reading the Chrome account picture…',
+    connected: 'Showing the picture of the Google account signed in to Chrome.',
+    'signed-out': 'Chrome is not signed in to a Google account. Showing the custom avatar or default icon.'
+  }[state] || '';
+}
+
+async function hasGoogleAvatarAccess() {
+  try {
+    return await chrome.permissions.contains({ permissions: ['identity'], origins: [LaunchPadCore.GOOGLE_PROFILE_ORIGIN] });
+  } catch {
+    return false;
+  }
+}
+
+async function requestGoogleToken(interactive) {
+  const token = LaunchPadCore.readAuthToken(await chrome.identity.getAuthToken({ interactive }));
+  if (!token) throw new Error('Chrome did not return a Google token');
+  return token;
+}
+
+async function fetchGoogleProfilePicture(interactive) {
+  let token = await requestGoogleToken(interactive);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(LaunchPadCore.GOOGLE_USERINFO_URL, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'omit',
+      cache: 'no-store'
+    });
+    if (response.status === 401 && attempt === 0) {
+      // An expired cached token: drop it and ask Chrome for a fresh one once.
+      await chrome.identity.removeCachedAuthToken({ token });
+      token = await requestGoogleToken(interactive);
+      continue;
+    }
+    if (!response.ok) throw new Error(`Google profile request failed (HTTP ${response.status})`);
+    return LaunchPadCore.readGoogleProfilePicture(await response.json());
+  }
+  throw new Error('Google rejected the refreshed token');
+}
+
+function watchGoogleSignIn() {
+  if (googleSignInWatched || !chrome.identity?.onSignInChanged) return;
+  googleSignInWatched = true;
+  chrome.identity.onSignInChanged.addListener((_account, signedIn) => {
+    googleAvatarUrl = '';
+    applyAvatar();
+    void chrome.storage.local.remove(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY).catch(() => {});
+    if (signedIn) void syncGoogleAvatar({ force: true });
+    else setGoogleAvatarState('signed-out');
+  });
+}
+
+async function syncGoogleAvatar({ interactive = false, force = false } = {}) {
+  const requestVersion = ++googleAvatarRequestVersion;
+  if (!LaunchPadCore.isOAuthClientConfigured(chrome.runtime.getManifest())) {
+    setGoogleAvatarState('unconfigured');
     return;
   }
+  if (!await hasGoogleAvatarAccess()) {
+    if (requestVersion !== googleAvatarRequestVersion) return;
+    if (googleAvatarUrl) { googleAvatarUrl = ''; applyAvatar(); }
+    setGoogleAvatarState('off');
+    return;
+  }
+  watchGoogleSignIn();
+  let cached = null;
+  try {
+    const stored = await chrome.storage.local.get(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY);
+    cached = LaunchPadCore.readCachedGoogleProfile(stored[LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY]);
+  } catch (error) {
+    logEvent('warn', 'Google profile cache read failed', { error: error.message });
+  }
+  if (requestVersion !== googleAvatarRequestVersion) return;
+  if (cached && cached.picture !== googleAvatarUrl) { googleAvatarUrl = cached.picture; applyAvatar(); }
+  if (cached?.fresh && !force) {
+    setGoogleAvatarState('connected');
+    return;
+  }
+  // With a saved picture shown, revalidate quietly instead of flashing a loading state.
+  setGoogleAvatarState(cached && !interactive ? 'connected' : 'loading');
+  try {
+    const picture = await fetchGoogleProfilePicture(interactive);
+    if (requestVersion !== googleAvatarRequestVersion) return;
+    googleAvatarUrl = picture;
+    applyAvatar();
+    if (!picture) {
+      await chrome.storage.local.remove(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY);
+      setGoogleAvatarState('connected', 'Connected, but this Google account has no profile picture. Showing the custom avatar or default icon.');
+      return;
+    }
+    try {
+      await chrome.storage.local.set({ [LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY]: { picture, fetchedAt: Date.now() } });
+      setGoogleAvatarState('connected');
+    } catch (error) {
+      setGoogleAvatarState('connected', 'Showing the Google account picture, but it could not be saved on this device; it will be read again next time.');
+      logEvent('warn', 'Google profile cache write failed', { error: error.message });
+    }
+  } catch (error) {
+    if (requestVersion !== googleAvatarRequestVersion) return;
+    logEvent('warn', 'Google profile picture failed', { error: error.message });
+    setGoogleAvatarState(cached ? 'stale' : 'error', cached
+      ? `Could not refresh the Google picture (${error.message}). Showing the last saved one.`
+      : `Could not read the Google account picture: ${error.message}`);
+  }
+}
 
-  const avatarImage = new Image();
-  avatarImage.onload = () => {
-    if (requestVersion !== avatarRequestVersion) return;
-    avatarBtn.style.backgroundImage = `url("${resolvedAvatarUrl.replace(/["\\]/g, '')}")`;
-    avatarBtn.classList.add('has-image');
-    avatarBtn.textContent = '';
-    avatarBtn.title = 'Google account links';
-    avatarBtn.setAttribute('aria-label', 'Google account links');
-  };
-  avatarImage.onerror = () => {
-    if (requestVersion !== avatarRequestVersion) return;
-    renderAvatarFallback();
-  };
-  avatarImage.src = resolvedAvatarUrl;
+async function connectGoogleAvatar() {
+  // Request access first, inside the click gesture.
+  const granted = await chrome.permissions.request({ permissions: ['identity'], origins: [LaunchPadCore.GOOGLE_PROFILE_ORIGIN] }).catch(() => false);
+  if (!granted) {
+    setGoogleAvatarState('off', 'Chrome access was not granted. The Google account picture stays off.');
+    return;
+  }
+  await syncGoogleAvatar({ interactive: true, force: true });
+}
+
+async function disconnectGoogleAvatar() {
+  ++googleAvatarRequestVersion;
+  const failures = [];
+  try {
+    const token = LaunchPadCore.readAuthToken(await chrome.identity?.getAuthToken?.({ interactive: false }));
+    if (token) await chrome.identity.removeCachedAuthToken({ token });
+  } catch { /* No cached token to drop. */ }
+  try {
+    await chrome.storage.local.remove(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY);
+  } catch (error) {
+    failures.push('the saved picture could not be removed');
+    logEvent('warn', 'Google profile cache removal failed', { error: error.message });
+  }
+  const removed = await chrome.permissions.remove({ permissions: ['identity'], origins: [LaunchPadCore.GOOGLE_PROFILE_ORIGIN] }).catch(() => false);
+  if (!removed) failures.push('Chrome access could not be removed');
+  googleAvatarUrl = '';
+  applyAvatar();
+  setGoogleAvatarState('off', failures.length ? `Disconnected, but ${failures.join(' and ')}. Try again.` : '');
 }
 
 function normalizeUrl(url) {
@@ -721,7 +945,11 @@ function updateArxivResearchContext() {
     ? ArxivResearch.buildArxivResearchPreset(activeId)
     : null;
   if (arxivSubtitle) {
-    arxivSubtitle.textContent = activePreset
+    arxivSubtitle.textContent = arxivSource === 'hf'
+      ? 'Hugging Face Daily Papers · ranked by upvotes'
+      : arxivSource === 'saved'
+      ? 'Read later · saved on this device'
+      : activePreset
       ? `${activePreset.label} · ${arxivCategories.length} feeds`
       : `Custom mix · ${arxivCategories.length || 1} feeds`;
   }
@@ -921,11 +1149,11 @@ function sanitizeCachedFeed(items) {
   return items.filter(item => item && typeof item.title === 'string' && LaunchPadCore.normalizeHttpUrl(item.link))
     .map(item => {
       const safe = { ...item, link: LaunchPadCore.normalizeHttpUrl(item.link) };
-      for (const key of ['description', 'desc', 'pubDate', 'category', 'time', 'reason', 'language', 'license', 'sourceLabel']) {
+      for (const key of ['description', 'desc', 'pubDate', 'category', 'time', 'reason', 'language', 'license', 'sourceLabel', 'authors', 'announceType', 'created', 'updated']) {
         safe[key] = typeof item[key] === 'string' ? item[key] : '';
       }
-      for (const key of ['tags', 'sources']) safe[key] = Array.isArray(item[key]) ? item[key].filter(value => typeof value === 'string') : [];
-      for (const key of ['stars', 'score']) safe[key] = typeof item[key] === 'number' && Number.isFinite(item[key]) ? item[key] : 0;
+      for (const key of ['tags', 'sources', 'areas']) safe[key] = Array.isArray(item[key]) ? item[key].filter(value => typeof value === 'string') : [];
+      for (const key of ['stars', 'score', 'upvotes', 'forks']) safe[key] = typeof item[key] === 'number' && Number.isFinite(item[key]) ? item[key] : 0;
       return safe;
     });
 }
@@ -939,13 +1167,15 @@ async function loadArxivFeed() {
   if (categories.length === 0) categories.push('cs.AI');
   // stale-while-revalidate: show cached data first
   const cached = readMatchingArxivCache(categories);
+  const latestVisible = () => arxivSource === 'latest';
   if (cached.length) {
     arxivItems = cached;
-    const rendered = renderArxivItems();
-    arxivStatus.textContent = `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`;
+    markPanelUpdated('latest', readLocalJson(CACHE_KEYS.arxiv)?.fetchedAt);
+    const rendered = latestVisible() ? renderArxivItems() : countArxivMatches(arxivItems);
+    setArxivSourceStatus('latest', `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`);
   } else {
-    renderSkeleton(arxivList, 5);
-    arxivStatus.textContent = 'Loading latest papers...';
+    if (latestVisible()) renderSkeleton(arxivList, 5);
+    setArxivSourceStatus('latest', 'Loading latest papers...');
   }
   try {
     const fetchCategory = async (category) => {
@@ -968,14 +1198,23 @@ async function loadArxivFeed() {
       if (doc.querySelector('parsererror') || !['rss', 'rdf'].includes(doc.documentElement?.localName.toLowerCase()) || !doc.querySelector('channel')) {
         throw new Error('The source did not return a valid RSS feed');
       }
+      const readNamespaced = (item, namespace, name) =>
+        item.getElementsByTagNameNS(namespace, name)[0]?.textContent?.trim() || '';
       return Array.from(doc.querySelectorAll('item'))
-        .map(item => ({
-          title: item.querySelector('title')?.textContent?.trim() || 'Untitled',
-          link: LaunchPadCore.normalizeHttpUrl(item.querySelector('link')?.textContent?.trim() || ''),
-          pubDate: item.querySelector('pubDate')?.textContent?.trim() || '',
-          description: item.querySelector('description')?.textContent?.trim() || '',
-          category
-        }))
+        .map(item => {
+          const description = item.querySelector('description')?.textContent?.trim() || '';
+          return {
+            title: item.querySelector('title')?.textContent?.trim() || 'Untitled',
+            link: LaunchPadCore.normalizeHttpUrl(item.querySelector('link')?.textContent?.trim() || ''),
+            pubDate: item.querySelector('pubDate')?.textContent?.trim() || '',
+            description,
+            authors: readNamespaced(item, 'http://purl.org/dc/elements/1.1/', 'creator'),
+            announceType: ArxivResearch.normalizeArxivAnnounceType(
+              readNamespaced(item, 'http://arxiv.org/schemas/atom', 'announce_type'), description
+            ),
+            category
+          };
+        })
         .filter(item => item.link);
     };
     const results = await Promise.allSettled(categories.map(fetchCategory));
@@ -995,47 +1234,214 @@ async function loadArxivFeed() {
       // arXiv RSS is empty on days without an announcement (weekends, holidays).
       // An empty update keeps the cached papers and their cache entry.
       if (cached.length) {
-        arxivStatus.textContent = coverage.kind === 'partial'
+        setArxivSourceStatus('latest', coverage.kind === 'partial'
           ? `Using cached data · ${coverage.rejected}/${coverage.total} categories failed`
-          : `No new papers in the latest arXiv update · showing ${cached.length} cached papers`;
+          : `No new papers in the latest arXiv update · showing ${cached.length} cached papers`);
       } else {
         arxivItems = [];
-        renderFeedEmpty(arxivList, 'arXiv publishes no new papers on some days, such as weekends and holidays. Check again after the next announcement.', {
-          label: 'Open arXiv', href: 'https://arxiv.org/'
-        });
-        arxivStatus.textContent = coverage.kind === 'partial'
+        if (latestVisible()) renderLatestEmpty();
+        setArxivSourceStatus('latest', coverage.kind === 'partial'
           ? `No papers from available categories · ${coverage.rejected}/${coverage.total} failed`
-          : 'No new papers in the latest arXiv update.';
+          : 'No new papers in the latest arXiv update.');
       }
       return;
     }
-    merged.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-    arxivItems = merged.slice(0, MAX_ARXIV_ITEMS);
+    // Keep the full announcement so later filter changes search every paper, not a truncated subset.
+    arxivItems = ArxivResearch.rankArxivItems(merged);
+    markPanelUpdated('latest');
     if (coverage.kind === 'complete') {
       writeLocalJson(CACHE_KEYS.arxiv, {
         version: 2,
         categories: [...categories],
         fetchedAt: Date.now(),
-        items: arxivItems
+        items: arxivItems.slice(0, MAX_ARXIV_CACHED)
       });
     }
-    const rendered = renderArxivItems();
-    arxivStatus.textContent = coverage.kind === 'partial'
+    const rendered = latestVisible() ? renderArxivItems() : countArxivMatches(arxivItems);
+    setArxivSourceStatus('latest', coverage.kind === 'partial'
       ? `Partial update · ${coverage.fulfilled}/${coverage.total} feeds · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`
-      : `Updated just now · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`;
+      : `Updated just now · ${rendered.filteredCount} matches from ${rendered.totalCount} papers`);
   } catch (error) {
     if (requestVersion !== arxivRequestVersion) return;
     if (!arxivItems.length) {
-      renderFeedEmpty(arxivList, 'Try again, or check the source directly.', {
-        label: 'Open arXiv', href: 'https://arxiv.org/'
-      });
-      setStatusWithRetry(arxivStatus, 'Failed to load arXiv feed.', loadArxivFeed);
+      if (latestVisible()) renderLatestFailure();
+      setArxivSourceStatus('latest', 'Failed to load arXiv feed.', loadArxivFeed);
     } else {
-      arxivStatus.textContent = cached.length
+      setArxivSourceStatus('latest', cached.length
         ? 'Using cached data (refresh failed)'
-        : 'Keeping previous data (refresh failed)';
+        : 'Keeping previous data (refresh failed)');
     }
   }
+}
+
+function renderLatestEmpty() {
+  renderFeedEmpty(arxivList, 'arXiv publishes no new papers on some days, such as weekends and holidays. Check again after the next announcement.', {
+    label: 'Open arXiv', href: 'https://arxiv.org/'
+  });
+}
+
+function renderLatestFailure() {
+  renderFeedEmpty(arxivList, 'Try again, or check the source directly.', {
+    label: 'Open arXiv', href: 'https://arxiv.org/'
+  });
+}
+
+function setArxivSourceStatus(source, text, retry = null) {
+  arxivSourceStatus[source] = { text, retry };
+  if (arxivSource !== source || !arxivStatus) return;
+  if (retry) setStatusWithRetry(arxivStatus, text, retry);
+  else arxivStatus.textContent = text;
+}
+
+function getHfPermissionState() {
+  if (!chrome.permissions?.contains) return Promise.resolve(false);
+  return chrome.permissions.contains({ origins: [LaunchPadCore.HF_DAILY_ORIGIN] }).catch(() => false);
+}
+
+function readHfCache() {
+  const cache = readLocalJson(CACHE_KEYS.hfDaily);
+  if (cache?.version !== 1 || !Array.isArray(cache.items)) return null;
+  const items = sanitizeCachedFeed(cache.items)
+    .map(item => {
+      const arxivId = ArxivResearch.extractArxivId(item.link);
+      return {
+        ...item,
+        arxivId,
+        upvotes: Number.isInteger(item.upvotes) ? Math.max(0, item.upvotes) : 0,
+        githubRepo: ArxivResearch.normalizeGithubRepo(item.githubRepo),
+        hfLink: arxivId ? `${HF_PAPERS_PAGE}/${arxivId}` : ''
+      };
+    })
+    .filter(item => item.arxivId);
+  return { items, fetchedAt: Number(cache.fetchedAt) || 0 };
+}
+
+function applyHfItems(items) {
+  hfItems = items;
+  hfIndex = ArxivResearch.buildHfPaperIndex(items);
+}
+
+async function initHfDaily() {
+  const cache = readHfCache();
+  if (cache?.items.length) {
+    applyHfItems(cache.items);
+    markPanelUpdated('hf', cache.fetchedAt);
+  }
+  if (!await getHfPermissionState()) return;
+  // Badges on the Latest view refresh quietly once the user has granted access.
+  if (hfItems.length && arxivSource === 'latest') renderArxivItems({ keepStatus: true });
+  if (!cache || Date.now() - cache.fetchedAt > HF_CACHE_FRESH_MS) await loadHfDaily();
+}
+
+async function loadHfDaily() {
+  const requestVersion = ++hfRequestVersion;
+  const hfVisible = () => arxivSource === 'hf';
+  if (hfVisible()) {
+    if (hfItems.length) {
+      const rendered = renderArxivItems({ keepStatus: true });
+      setArxivSourceStatus('hf', `Cached · ${describeHfCount(rendered)} · refreshing...`);
+    } else {
+      renderSkeleton(arxivList, 5);
+      setArxivSourceStatus('hf', 'Loading Hugging Face Daily Papers...');
+    }
+  }
+  try {
+    if (!chrome.runtime?.sendMessage) throw new Error('Extension messaging is unavailable');
+    const result = await chrome.runtime.sendMessage({ type: 'fetchHfDaily', url: HF_DAILY_URL });
+    if (!result || !result.ok) throw new Error(result?.error || 'Fetch failed');
+    const items = ArxivResearch.parseHfDailyPapers(JSON.parse(result.text));
+    if (requestVersion !== hfRequestVersion) return;
+    applyHfItems(items);
+    writeLocalJson(CACHE_KEYS.hfDaily, { version: 1, fetchedAt: Date.now(), items });
+    markPanelUpdated('hf');
+    if (hfVisible()) {
+      if (!items.length) {
+        renderFeedEmpty(arxivList, 'Hugging Face has no daily papers right now.', { label: 'Open Hugging Face', href: HF_PAPERS_PAGE });
+        setArxivSourceStatus('hf', 'No Hugging Face papers yet today.');
+        return;
+      }
+      const rendered = renderArxivItems({ keepStatus: true });
+      setArxivSourceStatus('hf', `Updated just now · ${describeHfCount(rendered)}`);
+    } else {
+      arxivSourceStatus.hf = null;
+      if (arxivItems.length) renderArxivItems({ keepStatus: true });
+    }
+  } catch (error) {
+    if (requestVersion !== hfRequestVersion) return;
+    const message = /permission/i.test(error.message || '')
+      ? 'Hugging Face access was not granted.'
+      : 'Failed to load Hugging Face papers.';
+    if (!hfItems.length) {
+      if (hfVisible()) {
+        renderFeedEmpty(arxivList, 'Try again, or open Hugging Face Daily Papers directly.', { label: 'Open Hugging Face', href: HF_PAPERS_PAGE });
+      }
+      setArxivSourceStatus('hf', message, () => selectArxivSource('hf', { refresh: true }));
+    } else {
+      setArxivSourceStatus('hf', `Using cached Hugging Face data (${message.replace(/\.$/, '').toLowerCase()})`);
+    }
+  }
+}
+
+function renderArxivSourceSwitch() {
+  document.querySelectorAll('#arxivSourceSwitch [data-source]').forEach(button => {
+    const active = button.dataset.source === arxivSource;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  const filterToggle = document.getElementById('hfFilterToggle');
+  if (filterToggle) {
+    filterToggle.hidden = arxivSource !== 'hf';
+    filterToggle.classList.toggle('active', hfApplyFilter);
+    filterToggle.setAttribute('aria-pressed', String(hfApplyFilter));
+  }
+}
+
+function setHfApplyFilter(value) {
+  if (hfApplyFilter === value) return;
+  hfApplyFilter = value;
+  writeLocalJson(HF_FILTER_PREF_KEY, value);
+  renderArxivSourceSwitch();
+  if (arxivSource === 'hf' && hfItems.length) renderArxivItems();
+}
+
+function showArxivSource(source) {
+  arxivSource = source;
+  renderArxivSourceSwitch();
+  renderPanelUpdated();
+  updateArxivResearchContext();
+  const status = arxivSourceStatus[source];
+  const items = source === 'hf' ? hfItems : source === 'saved' ? readingList : arxivItems;
+  if (source === 'saved') renderArxivItems({ keepStatus: Boolean(status) });
+  else if (items.length) renderArxivItems({ keepStatus: Boolean(status) });
+  else if (source === 'hf' || /^Loading/.test(status?.text || '')) renderSkeleton(arxivList, 5);
+  else if (status?.retry) renderLatestFailure();
+  else renderLatestEmpty();
+  if (status) setArxivSourceStatus(source, status.text, status.retry);
+}
+
+function selectArxivSource(source, { refresh = false } = {}) {
+  if (source !== 'hf') {
+    showArxivSource(source === 'saved' ? 'saved' : 'latest');
+    return;
+  }
+  // Request immediately from the click call stack so Chrome retains the user gesture.
+  const permission = chrome.permissions?.request
+    ? chrome.permissions.request({ origins: [LaunchPadCore.HF_DAILY_ORIGIN] }).catch(() => false)
+    : Promise.resolve(false);
+  void permission.then(granted => {
+    if (!granted) {
+      if (arxivStatus) arxivStatus.textContent = 'HF Hot needs access to huggingface.co. Click HF Hot again to allow it.';
+      return;
+    }
+    showArxivSource('hf');
+    const cache = readHfCache();
+    if (refresh || !hfItems.length || !cache || Date.now() - cache.fetchedAt > HF_CACHE_FRESH_MS) {
+      void loadHfDaily();
+    } else if (!arxivSourceStatus.hf) {
+      const rendered = renderArxivItems({ keepStatus: true });
+      setArxivSourceStatus('hf', `Cached · ${describeHfCount(rendered)}`);
+    }
+  });
 }
 
 function getArxivSummary(value) {
@@ -1056,47 +1462,205 @@ function formatArxivDate(value) {
   }).format(timestamp);
 }
 
-function renderArxivItems() {
+function arxivFilterApplies() {
+  if (arxivSource === 'saved') return false;
+  return arxivSource !== 'hf' || hfApplyFilter;
+}
+
+function describeHfCount(rendered) {
+  return arxivFilterApplies()
+    ? `${rendered.filteredCount} matches from ${rendered.totalCount} Hugging Face papers`
+    : `${rendered.totalCount} Hugging Face papers`;
+}
+
+function filterArxivSourceItems(items) {
+  if (!arxivFilterApplies()) return items.slice();
+  return items.filter(item => FilterQuery.matchesFilterAst(
+    lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)} ${item.authors || ''}`
+  ));
+}
+
+function countArxivMatches(items) {
+  const filtered = items.filter(item => FilterQuery.matchesFilterAst(
+    lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)} ${item.authors || ''}`
+  ));
+  return { filteredCount: filtered.length, totalCount: items.length };
+}
+
+function buildArxivCardActions(item, hfPaper) {
+  const arxivId = ArxivResearch.extractArxivId(item.link);
+  if (!arxivId) return '';
+  const links = [];
+  if (hfPaper) {
+    links.push(`<a class="research-card-action" href="${escapeHtml(hfPaper.hfLink)}" target="_blank" rel="noopener" aria-label="Hugging Face discussion, ${hfPaper.upvotes} upvotes">▲ ${hfPaper.upvotes} on HF</a>`);
+    if (hfPaper.githubRepo) {
+      links.push(`<a class="research-card-action" href="${escapeHtml(hfPaper.githubRepo)}" target="_blank" rel="noopener">Code</a>`);
+    }
+  }
+  const saved = isPaperSaved(item.link);
+  links.push(
+    `<a class="research-card-action" href="https://arxiv.org/pdf/${escapeHtml(arxivId)}" target="_blank" rel="noopener" aria-label="PDF for arXiv ${escapeHtml(arxivId)}">PDF</a>`,
+    `<button type="button" class="research-card-action" data-card-action="bibtex">BibTeX</button>`,
+    `<button type="button" class="research-card-action${saved ? ' active' : ''}" data-card-action="save" aria-pressed="${saved}">${saved ? 'Saved' : 'Save'}</button>`
+  );
+  return `<div class="research-card-actions">${links.join('')}</div>`;
+}
+
+function paperKey(link) {
+  return ArxivResearch.extractArxivId(link) || link;
+}
+
+function isPaperSaved(link) {
+  const key = paperKey(link);
+  return readingList.some(item => paperKey(item.link) === key);
+}
+
+function sanitizeReadingList(items) {
+  const seen = new Set();
+  return sanitizeCachedFeed(items).filter(item => {
+    const key = paperKey(item.link);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(item => ({
+    title: item.title, link: item.link, authors: item.authors, description: item.description,
+    pubDate: item.pubDate, category: item.category, savedAt: Number.isFinite(item.savedAt) ? item.savedAt : 0
+  })).slice(0, MAX_READING_LIST);
+}
+
+function renderSavedCount() {
+  const button = document.querySelector('#arxivSourceSwitch [data-source="saved"]');
+  if (button) button.textContent = readingList.length ? `Saved ${readingList.length}` : 'Saved';
+}
+
+function applyReadingList(items) {
+  readingList = sanitizeReadingList(items);
+  renderSavedCount();
+  if (arxivSource === 'saved') showArxivSource('saved');
+  else if (renderedArxivItems.size) renderArxivItems({ keepStatus: true });
+}
+
+async function loadReadingList() {
+  try {
+    const stored = await chrome.storage.local.get(READING_LIST_KEY);
+    arxivSourceStatus.saved = null;
+    applyReadingList(Array.isArray(stored[READING_LIST_KEY]) ? stored[READING_LIST_KEY] : []);
+  } catch (error) {
+    setArxivSourceStatus('saved', 'Could not read saved papers. Try again.', () => void loadReadingList());
+    logEvent('warn', 'Reading list read failed', { error: error.message });
+  }
+}
+
+async function toggleSavedPaper(item) {
+  const previous = readingList;
+  const key = paperKey(item.link);
+  const next = isPaperSaved(item.link)
+    ? previous.filter(saved => paperKey(saved.link) !== key)
+    : [{ title: item.title, link: item.link, authors: item.authors || '', description: item.description || '', pubDate: item.pubDate || '', category: item.category || '', savedAt: Date.now() }, ...previous].slice(0, MAX_READING_LIST);
+  applyReadingList(next);
+  try {
+    await chrome.storage.local.set({ [READING_LIST_KEY]: readingList });
+  } catch (error) {
+    applyReadingList(previous);
+    if (arxivStatus) arxivStatus.textContent = 'Could not update saved papers. Try again.';
+    logEvent('warn', 'Reading list save failed', { error: error.message });
+  }
+}
+
+async function copyPaperBibtex(item, button) {
+  const bibtex = ArxivResearch.buildArxivBibtex(item);
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(bibtex);
+    copied = true;
+  } catch {
+    copied = false;
+  }
+  button.textContent = copied ? 'Copied' : 'Copy failed';
+  button.classList.toggle('error', !copied);
+  if (arxivStatus) arxivStatus.textContent = copied ? 'BibTeX copied to the clipboard.' : 'Could not copy BibTeX. Check clipboard access and try again.';
+  setTimeout(() => {
+    if (!button.isConnected) return;
+    button.textContent = 'BibTeX';
+    button.classList.remove('error');
+  }, 1500);
+}
+
+function renderArxivItems({ keepStatus = false } = {}) {
   if (!arxivList || !arxivStatus) return { filteredCount: 0, totalCount: 0 };
   const parsed = FilterQuery.parseFilterQuery(arxivFilter, arxivFilterModeValue);
   const error = document.getElementById('arxivFilterError');
   error.textContent = parsed.ok ? '' : `Filter not applied. ${parsed.error} Showing the last valid results.`;
   arxivFilterInput?.setAttribute('aria-invalid', parsed.ok ? 'false' : 'true');
   if (parsed.ok) lastValidFilter = { query: arxivFilter.trim(), mode: arxivFilterModeValue, ast: parsed.ast };
-  const trimmed = lastValidFilter.query;
-  const filtered = arxivItems.filter(item => FilterQuery.matchesFilterAst(lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)}`));
+  const hfMode = arxivSource === 'hf';
+  const savedMode = arxivSource === 'saved';
+  const trimmed = arxivFilterApplies() ? lastValidFilter.query : '';
+  const sourceItems = hfMode ? hfItems : savedMode ? readingList : arxivItems;
+  const sourceLabel = hfMode ? 'Hugging Face papers' : savedMode ? 'saved papers' : 'papers';
+  const filtered = filterArxivSourceItems(sourceItems);
   arxivList.innerHTML = '';
+  renderedArxivItems.clear();
+  if (savedMode && filtered.length === 0) {
+    if (!keepStatus) setArxivSourceStatus('saved', 'No saved papers yet.');
+    renderFeedEmpty(arxivList, 'Use Save on any paper to keep it here for later reading.');
+    return { filteredCount: 0, totalCount: 0 };
+  }
   if (filtered.length === 0) {
-    arxivStatus.textContent = 'No papers match the filter.';
+    if (!keepStatus) setArxivSourceStatus(arxivSource, 'No papers match the filter.');
     renderFeedEmpty(arxivList, trimmed ? 'Try a broader query or clear the current filter.' : 'No papers available yet.',
       trimmed ? { label: 'Clear filter', run: () => arxivFilterClear.click() } : null);
-    return { filteredCount: 0, totalCount: arxivItems.length };
+    return { filteredCount: 0, totalCount: sourceItems.length };
   }
-  arxivStatus.textContent = trimmed
-    ? `Showing ${filtered.length} of ${arxivItems.length} papers`
-    : `Showing ${filtered.length} papers`;
-  filtered.forEach((item, index) => {
-    const entry = document.createElement('a');
+  const visible = filtered.slice(0, MAX_ARXIV_RENDERED);
+  const shownLabel = visible.length < filtered.length ? `top ${visible.length} of ${filtered.length}` : `${filtered.length}`;
+  if (!keepStatus) {
+    setArxivSourceStatus(arxivSource, trimmed
+      ? `Showing ${shownLabel} matches from ${sourceItems.length} ${sourceLabel}`
+      : `Showing ${shownLabel} ${sourceLabel}`);
+  }
+  visible.forEach((item, index) => {
+    const hfPaper = hfMode ? item : hfIndex.get(ArxivResearch.extractArxivId(item.link));
+    const actions = buildArxivCardActions(item, hfPaper);
+    // Cards with secondary links use a stretched title link to avoid nesting anchors.
+    const entry = document.createElement(actions ? 'div' : 'a');
     entry.className = 'panel-item research-card';
-    entry.href = item.link;
-    entry.target = '_blank';
-    entry.rel = 'noopener';
+    if (actions) {
+      entry.classList.add('has-actions');
+      entry.dataset.paperKey = paperKey(item.link);
+      renderedArxivItems.set(entry.dataset.paperKey, item);
+    } else {
+      entry.href = item.link;
+      entry.target = '_blank';
+      entry.rel = 'noopener';
+    }
     entry.role = 'listitem';
     entry.style.setProperty('--item-index', String(Math.min(index, 12)));
     const summary = getArxivSummary(item.description);
     const matchedTracks = ArxivResearch.matchArxivResearchTracks(item);
     const reason = matchedTracks.length
       ? matchedTracks.map(track => track.label).join(' · ')
-      : 'Custom research filter';
+      : (hfMode ? 'Trending on Hugging Face' : savedMode ? 'Saved for later' : 'Custom research filter');
+    const authors = ArxivResearch.formatArxivAuthors(item.authors);
+    const meta = hfMode
+      ? ['Hugging Face Daily', formatArxivDate(item.pubDate)].filter(Boolean)
+      : savedMode
+      ? ['Saved', item.category, formatArxivDate(item.pubDate)].filter(Boolean)
+      : ['arXiv', item.category, ArxivResearch.getArxivAnnounceLabel(item.announceType), formatArxivDate(item.pubDate)].filter(Boolean);
+    const title = actions
+      ? `<a class="research-card-link" href="${escapeHtml(item.link)}" target="_blank" rel="noopener">${escapeHtml(item.title)}</a>`
+      : escapeHtml(item.title);
     entry.innerHTML = `
-      <div class="panel-item-title research-card-title">${escapeHtml(item.title)}</div>
+      <div class="panel-item-title research-card-title">${title}</div>
+      ${authors ? `<div class="research-card-authors">${escapeHtml(authors)}</div>` : ''}
       ${summary ? `<div class="panel-item-desc research-card-desc">${escapeHtml(summary)}</div>` : ''}
-      <div class="panel-item-meta research-card-meta">arXiv RSS · ${escapeHtml(item.category)} · ${escapeHtml(formatArxivDate(item.pubDate))}</div>
+      <div class="panel-item-meta research-card-meta">${meta.map(escapeHtml).join(' · ')}</div>
       <div class="panel-item-reason research-card-reason">${escapeHtml(reason)}</div>
+      ${actions}
     `;
     arxivList.appendChild(entry);
   });
-  return { filteredCount: filtered.length, totalCount: arxivItems.length };
+  return { filteredCount: filtered.length, totalCount: sourceItems.length };
 }
 
 function updateScourSource() {
@@ -1115,6 +1679,7 @@ async function loadScourFeed() {
   scourList.replaceChildren();
   scourItems = [];
   scourRendered = 0;
+  markPanelUpdated('scour', 0);
   if (!sourceUrl) {
     scourStatus.textContent = 'No Scour profile connected';
     renderFeedEmpty(scourList, 'Connect a public Scour profile to keep your reading feed here.', {
@@ -1131,6 +1696,7 @@ async function loadScourFeed() {
     : sourceUrl === LEGACY_SCOUR_URL && Array.isArray(record) ? record : []);
   if (cached.length) {
     scourItems = cached;
+    if (record?.source === sourceUrl) markPanelUpdated('scour', record.fetchedAt);
     scourStatus.textContent = `Showing cached · ${cached.length} items`;
     renderScourBatch();
   } else {
@@ -1149,6 +1715,7 @@ async function loadScourFeed() {
       return;
     }
     writeLocalJson(CACHE_KEYS.scour, { version: 2, source: sourceUrl, fetchedAt: Date.now(), items });
+    markPanelUpdated('scour');
     scourItems = items;
     scourRendered = 0;
     scourList.replaceChildren();
@@ -1202,25 +1769,90 @@ function academicTrendSourceLabel(items) {
 
 function formatAcademicTrendStatus(cache, prefix = '') {
   const source = academicTrendSourceLabel(cache.items || []);
-  const sources = new Set((cache.items || []).flatMap(item => item.sources || []));
-  const window = sources.has('ossinsight') && sources.has('github-search')
-    ? '7d trend + 180d fallback'
-    : sources.has('ossinsight')
-      ? '7d trend'
-      : cache.coverage?.primary === 'complete'
-        ? '180d fallback · OSS Insight scanned'
-        : '180d active-repo fallback';
-  const state = cache.coverage?.state === 'partial' ? 'partial coverage' : 'complete coverage';
-  const message = `${source} · ${window} · ${state} · ${cache.items.length} projects`;
+  const trendWindow = AcademicTrend.getTrendWindow(cache.coverage?.trendWindow);
+  const parts = [source, trendWindow.label];
+  if (cache.coverage?.primary === 'unavailable') parts.push('OSS Insight ranking paused upstream');
+  parts.push(cache.coverage?.state === 'partial' ? 'partial coverage' : 'complete coverage');
+  parts.push(`${cache.items.length} projects`);
+  const message = parts.join(' · ');
   return prefix ? `${prefix} · ${message}` : message;
 }
 
-async function loadAcademicTrend() {
+function trendCacheKey(windowId) {
+  return windowId === AcademicTrend.DEFAULT_TREND_WINDOW
+    ? CACHE_KEYS.academicTrend
+    : `${CACHE_KEYS.academicTrend}_${windowId}`;
+}
+
+function readTrendCache(windowId) {
+  const stored = readLocalJson(trendCacheKey(windowId));
+  if (!stored) return null;
+  const storedWindow = stored.coverage?.trendWindow || AcademicTrend.DEFAULT_TREND_WINDOW;
+  if (storedWindow !== windowId) return null;
+  return {
+    ...stored,
+    coverage: { ...(stored.coverage || {}), trendWindow: windowId },
+    items: sanitizeCachedFeed(stored.items)
+  };
+}
+
+function renderTrendControls() {
+  const trendWindow = AcademicTrend.getTrendWindow(trendWindowId);
+  document.querySelectorAll('#trendWindowSwitch [data-window]').forEach(button => {
+    const active = button.dataset.window === trendWindow.id;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  const subtitle = document.getElementById('trendSubtitle');
+  if (subtitle) {
+    subtitle.textContent = trendWindow.useOssInsight
+      ? `${trendWindow.label} · research-profile ranking`
+      : `${trendWindow.label} · newly created research repos`;
+  }
+  const select = document.getElementById('trendAreaFilter');
+  if (select) {
+    if (select.options.length <= 1) {
+      AcademicTrend.PROFILE_AREAS.forEach(area => {
+        const option = document.createElement('option');
+        option.value = area.label;
+        option.textContent = area.label;
+        select.appendChild(option);
+      });
+    }
+    if (!AcademicTrend.PROFILE_AREAS.some(area => area.label === trendArea)) trendArea = '';
+    select.value = trendArea;
+  }
+}
+
+function selectTrendWindow(windowId) {
+  const next = AcademicTrend.getTrendWindow(windowId).id;
+  if (next === trendWindowId) return;
+  trendWindowId = next;
+  writeLocalJson(TREND_WINDOW_PREF_KEY, next);
+  renderTrendControls();
+  void loadAcademicTrend();
+}
+
+function selectTrendArea(area) {
+  trendArea = AcademicTrend.PROFILE_AREAS.some(item => item.label === area) ? area : '';
+  writeLocalJson(TREND_AREA_PREF_KEY, trendArea);
+  renderTrendControls();
+  renderAcademicTrendItems(trendItems);
+}
+
+async function loadAcademicTrend({ force = false } = {}) {
   if (!favoriteList || !favoriteStatus) return;
-  const storedCache = readLocalJson(CACHE_KEYS.academicTrend);
-  const cached = storedCache ? { ...storedCache, items: sanitizeCachedFeed(storedCache.items) } : null;
+  const requestVersion = ++trendRequestVersion;
+  const windowId = trendWindowId;
+  const trendWindow = AcademicTrend.getTrendWindow(windowId);
+  const isCurrent = () => requestVersion === trendRequestVersion;
+  renderTrendControls();
+  const cached = readTrendCache(windowId);
   const cachedItems = Array.isArray(cached?.items) ? cached.items : [];
-  if (AcademicTrend.isFreshTrendCache(cached)) {
+  panelUpdatedAt.trend = 0;
+  if (cachedItems.length) markPanelUpdated('trend', cached.fetchedAt);
+  else renderPanelUpdated();
+  if (!force && AcademicTrend.isFreshTrendCache(cached)) {
     favoriteStatus.textContent = formatAcademicTrendStatus(cached, 'Cached < 1h');
     renderAcademicTrendItems(cached.items);
     return;
@@ -1230,27 +1862,39 @@ async function loadAcademicTrend() {
     renderAcademicTrendItems(cachedItems);
   } else {
     favoriteStatus.textContent = 'Loading research-profile trends...';
+    trendItems = [];
     renderSkeleton(favoriteList, 4);
   }
 
   try {
     let primaryItems = [];
-    let primaryOk = false;
-    try {
-      const payload = await fetchAcademicJson('fetchAcademicTrend', ACADEMIC_TREND_URL);
-      if (!Array.isArray(payload?.data?.rows)) throw new Error('Invalid OSS Insight response');
-      primaryItems = AcademicTrend.normalizeOssInsight(payload);
-      primaryOk = true;
-    } catch (error) {
-      void logEvent('warn', 'academic trend primary source failed', { message: error.message });
+    let primaryState = 'not-used';
+    if (trendWindow.useOssInsight) {
+      try {
+        const payload = await fetchAcademicJson('fetchAcademicTrend', ACADEMIC_TREND_URL);
+        if (!Array.isArray(payload?.data?.rows)) throw new Error('Invalid OSS Insight response');
+        const unavailable = AcademicTrend.readOssInsightUnavailable(payload);
+        if (unavailable) {
+          primaryState = 'unavailable';
+          void logEvent('warn', 'academic trend primary source unavailable', unavailable);
+        } else {
+          primaryItems = AcademicTrend.normalizeOssInsight(payload);
+          primaryState = 'complete';
+        }
+      } catch (error) {
+        primaryState = 'failed';
+        void logEvent('warn', 'academic trend primary source failed', { message: error.message });
+      }
     }
 
-    const primaryRanked = AcademicTrend.mergeAndRankRepositories(primaryItems, { limit: 10 });
-    const needsFallback = primaryRanked.length < 10;
+    const primaryRanked = AcademicTrend.mergeAndRankRepositories(primaryItems, { limit: TREND_DISPLAY_LIMIT });
+    const needsFallback = primaryRanked.length < TREND_DISPLAY_LIMIT;
     let fallbackItems = [];
     let fallbackFulfilled = 0;
     let fallbackIncomplete = false;
-    const fallbackRequests = needsFallback ? AcademicTrend.buildGithubSearchRequests() : [];
+    const fallbackRequests = needsFallback
+      ? AcademicTrend.buildGithubSearchRequests(Date.now(), windowId)
+      : [];
 
     if (needsFallback) {
       const results = await Promise.allSettled(fallbackRequests.map(async request => {
@@ -1265,18 +1909,21 @@ async function loadAcademicTrend() {
         fallbackItems = [...fallbackItems, ...result.value.items];
       }
     }
+    if (!isCurrent()) return;
 
+    // Keep a wider ranked pool so the area filter still has candidates.
     const items = AcademicTrend.mergeAndRankRepositories(
       [...primaryItems, ...fallbackItems],
-      { limit: 10 }
+      { limit: 30 }
     );
+    const primaryUsable = primaryState === 'complete' || primaryState === 'unavailable';
     if (items.length === 0) {
-      if (primaryOk || fallbackFulfilled > 0) {
+      if (primaryState === 'complete' || fallbackFulfilled > 0) {
         if (cachedItems.length) {
           favoriteStatus.textContent = formatAcademicTrendStatus(cached, 'Cached · no new matches returned');
         } else {
-          favoriteStatus.textContent = 'No matching projects returned by the available sources.';
-          renderFeedEmpty(favoriteList, 'Try refreshing later, or browse the source directly.');
+          favoriteStatus.textContent = `No matching projects returned for ${trendWindow.label}.`;
+          renderFeedEmpty(favoriteList, 'Try another window, refresh later, or browse the source directly.');
         }
         return;
       }
@@ -1285,35 +1932,54 @@ async function loadAcademicTrend() {
 
     const fallbackComplete = !needsFallback ||
       (fallbackFulfilled === fallbackRequests.length && !fallbackIncomplete);
+    const primaryComplete = !trendWindow.useOssInsight || primaryUsable;
     const coverage = {
-      state: primaryOk && fallbackComplete ? 'complete' : 'partial',
-      primary: primaryOk ? 'complete' : 'failed',
+      state: primaryComplete && fallbackComplete ? 'complete' : 'partial',
+      primary: primaryState,
       githubSearch: needsFallback
         ? `${fallbackFulfilled}/${fallbackRequests.length}`
         : 'not-needed',
       incompleteResults: fallbackIncomplete,
       primaryAcademicMatches: primaryRanked.length,
       fallbackCandidates: fallbackItems.length,
-      window: 'past_week'
+      trendWindow: windowId
     };
     const trendCache = AcademicTrend.createTrendCache(items, coverage);
-    writeLocalJson(CACHE_KEYS.academicTrend, trendCache);
+    writeLocalJson(trendCacheKey(windowId), trendCache);
+    markPanelUpdated('trend', trendCache.fetchedAt);
     favoriteStatus.textContent = formatAcademicTrendStatus(trendCache, 'Updated now');
     renderAcademicTrendItems(items);
   } catch (error) {
+    if (!isCurrent()) return;
     void logEvent('error', 'academic trend refresh failed', { message: error.message });
     if (!cachedItems.length) {
       renderFeedEmpty(favoriteList, 'The trend sources are unavailable. Try refreshing again.');
-      setStatusWithRetry(favoriteStatus, 'Failed to load Academic GitHub Trend.', loadAcademicTrend);
+      setStatusWithRetry(favoriteStatus, 'Failed to load Academic GitHub Trend.', () => loadAcademicTrend({ force: true }));
     } else {
       favoriteStatus.textContent = formatAcademicTrendStatus(cached, 'Cached fallback · refresh failed');
     }
   }
 }
 
+function formatTrendAge(value) {
+  const time = Date.parse(value || '');
+  if (!Number.isFinite(time)) return '';
+  const days = Math.max(0, Math.floor((Date.now() - time) / 86400000));
+  return days === 0 ? 'today' : `${days}d ago`;
+}
+
 function renderAcademicTrendItems(items) {
+  trendItems = Array.isArray(items) ? items : [];
+  const trendWindow = AcademicTrend.getTrendWindow(trendWindowId);
+  const visible = trendItems
+    .filter(item => !trendArea || (Array.isArray(item.areas) && item.areas.includes(trendArea)))
+    .slice(0, TREND_DISPLAY_LIMIT);
   favoriteList.innerHTML = '';
-  items.forEach((item, index) => {
+  if (trendItems.length && !visible.length) {
+    renderFeedEmpty(favoriteList, `No ${trendArea} projects in ${trendWindow.label}. Choose All areas or another window.`);
+    return;
+  }
+  visible.forEach(item => {
     const safeUrl = LaunchPadCore.normalizeHttpUrl(item.link);
     if (!safeUrl) return;
     const el = document.createElement('a');
@@ -1322,7 +1988,6 @@ function renderAcademicTrendItems(items) {
     el.target = '_blank';
     el.rel = 'noopener';
     el.role = 'listitem';
-    el.style.setProperty('--item-index', String(Math.min(index, 12)));
     const titleEl = document.createElement('div');
     titleEl.className = 'favorite-item-title research-card-title';
     titleEl.textContent = item.title;
@@ -1331,8 +1996,13 @@ function renderAcademicTrendItems(items) {
     descEl.textContent = item.desc;
     const metaEl = document.createElement('div');
     metaEl.className = 'favorite-item-meta research-card-meta';
+    const createdAge = trendWindow.useOssInsight ? '' : formatTrendAge(item.created);
+    const pushedAge = trendWindow.useOssInsight ? formatTrendAge(item.updated) : '';
     const metaParts = [
       `★ ${Number(item.stars || 0).toLocaleString()}`,
+      Number(item.forks) > 0 ? `⑂ ${Number(item.forks).toLocaleString()}` : '',
+      createdAge ? `created ${createdAge}` : '',
+      pushedAge ? `pushed ${pushedAge}` : '',
       `Score ${Number(item.score || 0).toFixed(1)}`,
       item.sourceLabel,
       item.language,
@@ -2129,6 +2799,11 @@ contextMenu.addEventListener('keydown', event => {
   if (event.key === 'Tab') closeContextMenu(true);
 });
 
+googleAvatarConnectBtn?.addEventListener('click', () => {
+  void (['connected', 'stale'].includes(googleAvatarState) ? syncGoogleAvatar({ interactive: true, force: true }) : connectGoogleAvatar());
+});
+googleAvatarDisconnectBtn?.addEventListener('click', () => void disconnectGoogleAvatar());
+
 // Auto-save valid avatar input, and flush the debounce when focus leaves the field.
 if (avatarUrlInput) {
   let avatarSaveTimer = null;
@@ -2209,6 +2884,46 @@ if (arxivApplyRefreshBtn) {
   });
 }
 
+document.getElementById('arxivSourceSwitch')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-source]');
+  if (!button || button.dataset.source === arxivSource) return;
+  selectArxivSource(button.dataset.source);
+});
+
+document.getElementById('arxivPanelRefreshBtn')?.addEventListener('click', (event) => {
+  void runPanelRefresh(event.currentTarget, () => arxivSource === 'hf' ? loadHfDaily()
+    : arxivSource === 'saved' ? loadReadingList() : loadArxivFeed());
+});
+arxivList?.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-card-action]');
+  const card = button?.closest('[data-paper-key]');
+  const item = card && renderedArxivItems.get(card.dataset.paperKey);
+  if (!item) return;
+  if (button.dataset.cardAction === 'bibtex') void copyPaperBibtex(item, button);
+  else if (button.dataset.cardAction === 'save') void toggleSavedPaper(item);
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[READING_LIST_KEY]) return;
+  const next = Array.isArray(changes[READING_LIST_KEY].newValue) ? changes[READING_LIST_KEY].newValue : [];
+  if (!LaunchPadCore.settingsEqual(next, readingList)) applyReadingList(next);
+});
+document.getElementById('scourPanelRefreshBtn')?.addEventListener('click', (event) => {
+  void runPanelRefresh(event.currentTarget, loadScourFeed);
+});
+document.getElementById('trendPanelRefreshBtn')?.addEventListener('click', (event) => {
+  void runPanelRefresh(event.currentTarget, () => loadAcademicTrend({ force: true }));
+});
+document.getElementById('trendWindowSwitch')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-window]');
+  if (button) selectTrendWindow(button.dataset.window);
+});
+document.getElementById('trendAreaFilter')?.addEventListener('change', (event) => {
+  selectTrendArea(event.target.value);
+});
+setInterval(renderPanelUpdated, 60 * 1000);
+
+document.getElementById('hfFilterToggle')?.addEventListener('click', () => setHfApplyFilter(!hfApplyFilter));
+
 arxivChips.forEach(chip => {
   chip.addEventListener('click', () => {
     const category = chip.dataset.category;
@@ -2233,6 +2948,7 @@ if (arxivFilterInput) {
   let filterSaveTimer = null;
   arxivFilterInput.addEventListener('input', () => {
     arxivFilter = arxivFilterInput.value;
+    if (arxivSource === 'hf') setHfApplyFilter(true);
     updateArxivResearchContext();
     renderArxivItems();
     clearTimeout(filterSaveTimer);
@@ -2275,6 +2991,7 @@ if (arxivResearchTracks) {
   arxivResearchTracks.addEventListener('click', (event) => {
     const button = event.target.closest('.research-track');
     if (!button) return;
+    if (arxivSource === 'hf') setHfApplyFilter(true);
     applyArxivResearchPreset(button.dataset.trackId);
   });
 

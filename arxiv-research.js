@@ -104,12 +104,115 @@
       .map(cloneTrack);
   }
 
+  const ANNOUNCE_TYPE_PRIORITY = { new: 0, cross: 1, replace: 2, 'replace-cross': 3 };
+  const ANNOUNCE_TYPE_LABELS = { new: 'New', cross: 'Cross-list', replace: 'Updated', 'replace-cross': 'Updated cross-list' };
+
+  // arXiv RSS exposes <arxiv:announce_type>; the description repeats it as a fallback.
+  function normalizeArxivAnnounceType(value, description = '') {
+    const direct = String(value || '').trim().toLowerCase();
+    if (Object.hasOwn(ANNOUNCE_TYPE_PRIORITY, direct)) return direct;
+    const match = String(description || '').match(/Announce Type:\s*([a-z-]+)/i);
+    const fromDescription = match ? match[1].toLowerCase() : '';
+    return Object.hasOwn(ANNOUNCE_TYPE_PRIORITY, fromDescription) ? fromDescription : '';
+  }
+
+  function getArxivAnnounceLabel(type) {
+    return ANNOUNCE_TYPE_LABELS[type] || '';
+  }
+
+  // New submissions first, then cross-lists, then revisions; ties keep the feed order.
+  function rankArxivItems(items) {
+    if (!Array.isArray(items)) return [];
+    const priority = item => ANNOUNCE_TYPE_PRIORITY[item?.announceType] ?? 4;
+    return items
+      .map((item, index) => ({ item, index }))
+      .sort((left, right) => priority(left.item) - priority(right.item) || left.index - right.index)
+      .map(entry => entry.item);
+  }
+
+  function formatArxivAuthors(value, max = 3) {
+    const authors = String(value || '').split(',').map(author => author.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    if (authors.length <= max) return authors.join(', ');
+    return `${authors.slice(0, max).join(', ')} et al.`;
+  }
+
   function sameCategories(left, right) {
     if (!Array.isArray(left) || !Array.isArray(right)) return false;
     const normalizedLeft = Array.from(new Set(left.filter(value => typeof value === 'string'))).sort();
     const normalizedRight = Array.from(new Set(right.filter(value => typeof value === 'string'))).sort();
     return normalizedLeft.length === normalizedRight.length &&
       normalizedLeft.every((value, index) => value === normalizedRight[index]);
+  }
+
+  const ARXIV_ID_PATTERN = /^\d{4}\.\d{4,5}$/;
+  const GITHUB_REPO_PATTERN = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i;
+
+  function extractArxivId(link) {
+    const match = String(link || '').match(/arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?/i);
+    return match ? match[1] : '';
+  }
+
+  function buildArxivBibtex(item) {
+    const arxivId = extractArxivId(item?.link);
+    if (!arxivId) return '';
+    // Braces and backslashes would unbalance the entry.
+    const clean = value => String(value || '').replace(/[{}\\]/g, '').replace(/\s+/g, ' ').trim();
+    const authors = clean(item.authors).split(/\s*,\s*/).filter(Boolean);
+    const year = new Date(Date.parse(item.pubDate || '')).getUTCFullYear();
+    const fields = [
+      ['title', `{${clean(item.title)}}`],
+      authors.length ? ['author', `{${authors.join(' and ')}}`] : null,
+      Number.isFinite(year) ? ['year', `{${year}}`] : null,
+      ['eprint', `{${arxivId}}`],
+      ['archivePrefix', '{arXiv}'],
+      /^[a-z-]+(\.[A-Z]{2})?$/i.test(item.category || '') ? ['primaryClass', `{${item.category}}`] : null,
+      ['url', `{https://arxiv.org/abs/${arxivId}}`]
+    ].filter(Boolean);
+    return `@misc{arxiv${arxivId.replace('.', '_')},\n${fields.map(([key, value]) => `  ${key} = ${value}`).join(',\n')}\n}`;
+  }
+
+  function normalizeGithubRepo(value) {
+    const match = String(value || '').trim().match(GITHUB_REPO_PATTERN);
+    return match ? `https://github.com/${match[1]}/${match[2]}` : '';
+  }
+
+  // Hugging Face Daily Papers: community-curated arXiv papers with upvotes and optional code links.
+  function parseHfDailyPapers(payload) {
+    if (!Array.isArray(payload)) throw new Error('Hugging Face returned an unexpected payload');
+    const seen = new Set();
+    const items = [];
+    for (const entry of payload) {
+      const paper = entry?.paper;
+      const arxivId = typeof paper?.id === 'string' ? paper.id.trim() : '';
+      if (!ARXIV_ID_PATTERN.test(arxivId) || seen.has(arxivId)) continue;
+      seen.add(arxivId);
+      const upvotes = Number(paper.upvotes);
+      const authors = Array.isArray(paper.authors)
+        ? paper.authors.map(author => typeof author?.name === 'string' ? author.name.trim() : '').filter(Boolean).join(', ')
+        : '';
+      const submittedAt = typeof paper.submittedOnDailyAt === 'string' ? paper.submittedOnDailyAt : '';
+      items.push({
+        arxivId,
+        title: String(paper.title || entry.title || 'Untitled').replace(/\s+/g, ' ').trim(),
+        link: `https://arxiv.org/abs/${arxivId}`,
+        hfLink: `https://huggingface.co/papers/${arxivId}`,
+        description: String(paper.ai_summary || paper.summary || '').trim(),
+        authors,
+        upvotes: Number.isFinite(upvotes) && upvotes > 0 ? Math.floor(upvotes) : 0,
+        githubRepo: normalizeGithubRepo(paper.githubRepo),
+        category: 'HF Daily',
+        pubDate: submittedAt
+      });
+    }
+    return items.sort((left, right) => right.upvotes - left.upvotes);
+  }
+
+  function buildHfPaperIndex(items) {
+    const index = new Map();
+    for (const item of Array.isArray(items) ? items : []) {
+      if (item?.arxivId) index.set(item.arxivId, item);
+    }
+    return index;
   }
 
   function findMatchingArxivResearchTrack(categories, query, mode = 'any') {
@@ -123,8 +226,17 @@
 
   return {
     ARXIV_RESEARCH_TRACKS,
+    buildArxivBibtex,
     buildArxivResearchPreset,
+    buildHfPaperIndex,
+    extractArxivId,
     findMatchingArxivResearchTrack,
-    matchArxivResearchTracks
+    formatArxivAuthors,
+    getArxivAnnounceLabel,
+    matchArxivResearchTracks,
+    normalizeArxivAnnounceType,
+    normalizeGithubRepo,
+    parseHfDailyPapers,
+    rankArxivItems
   };
 });

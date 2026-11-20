@@ -127,9 +127,13 @@ for (const mode of ['failed', 'empty', 'partial']) {
 test('cached papers stay visible when refresh fails and zero-match filters offer recovery', async ({ page, worker, extensionId }) => {
   await openNewTab(page, extensionId);
   await expect(page.locator('#arxivStatus')).toContainText('Updated');
+  const firstCard = page.locator('#arxivList .research-card').first();
+  await expect(firstCard.locator('.research-card-authors')).toHaveText('Ada Fixture, Grace Fixture, Alan Fixture et al.');
+  await expect(firstCard.locator('.research-card-meta')).toContainText('New');
   await worker.evaluate(() => { globalThis.fixtureMode = 'failed'; });
   await page.reload();
   await expect(page.locator('#arxivStatus')).toContainText('Using cached data (refresh failed)');
+  await expect(firstCard.locator('.research-card-authors')).toBeVisible();
   await expect(page.locator('#scourStatus')).toContainText('refresh failed');
   await expect(page.locator('#arxivList .research-card').first()).toBeVisible();
   await page.locator('.panel-advanced summary').click();
@@ -137,6 +141,65 @@ test('cached papers stay visible when refresh fails and zero-match filters offer
   await expect(page.locator('#arxivList .research-card')).toHaveCount(0);
   await page.getByRole('button', { name: 'Clear filter', exact: true }).click();
   await expect(page.locator('#arxivList .research-card').first()).toBeVisible();
+});
+
+test('HF Hot asks for huggingface.co only, ranks by upvotes and annotates matching arXiv cards', async ({ page, worker, extensionId }) => {
+  await page.addInitScript(() => {
+    let granted = false;
+    chrome.permissions.contains = async () => granted;
+    chrome.permissions.request = async request => { window.requestedHfOrigins = request.origins; granted = true; return true; };
+  });
+  await worker.evaluate(() => { chrome.permissions.contains = async () => true; });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#arxivStatus')).toContainText('Updated');
+  await expect(page.locator('#arxivList .research-card-action', { hasText: 'on HF' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'HF Hot' }).click();
+  expect(await page.evaluate(() => window.requestedHfOrigins)).toEqual(['https://huggingface.co/*']);
+  await expect(page.getByRole('button', { name: 'HF Hot' })).toHaveAttribute('aria-pressed', 'true');
+  const hfTitles = page.locator('#arxivList .research-card-link');
+  await expect(hfTitles).toHaveText(['[Test fixture] Structured pruning for edge AI', '[Test fixture] Edge AI community favourite', '[Test fixture] Video diffusion world model']);
+  const topicToggle = page.getByRole('button', { name: 'Only my topics' });
+  await expect(topicToggle).toHaveAttribute('aria-pressed', 'false');
+  await topicToggle.click();
+  await expect(topicToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(hfTitles).toHaveText(['[Test fixture] Structured pruning for edge AI', '[Test fixture] Edge AI community favourite']);
+  await expect(page.locator('#arxivStatus')).toContainText('matches from 3 Hugging Face papers');
+  await expect(page.locator('#arxivList .research-card').first().locator('.research-card-action')).toHaveText(['▲ 42 on HF', 'Code', 'PDF', 'BibTeX', 'Save']);
+  await page.getByRole('button', { name: 'Latest' }).click();
+  await expect(topicToggle).toBeHidden();
+  const matched = page.locator('#arxivList .research-card', { has: page.getByRole('link', { name: /Hugging Face discussion/ }) });
+  await expect(matched).toHaveCount(1);
+  await expect(matched.getByRole('link', { name: 'Code' })).toHaveAttribute('href', 'https://github.com/fixture-lab/pruning');
+  await expect(matched.locator('.research-card-link')).toHaveAttribute('href', /arxiv\.org\/abs\/2609\.1000/);
+});
+
+test('arXiv cards link the PDF, copy BibTeX and keep saved papers after reload', async ({ page, extensionId }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copiedText = text; } } });
+  });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#arxivStatus')).toContainText('Updated');
+  const card = page.locator('#arxivList .research-card').first();
+  const title = await card.locator('.research-card-link').textContent();
+  const absHref = await card.locator('.research-card-link').getAttribute('href');
+  const arxivId = absHref.match(/abs\/([^?#v]+)/)[1];
+  await expect(card.getByRole('link', { name: `PDF for arXiv ${arxivId}` })).toHaveAttribute('href', `https://arxiv.org/pdf/${arxivId}`);
+  await card.getByRole('button', { name: 'BibTeX' }).click();
+  await expect(card.getByRole('button', { name: 'Copied' })).toBeVisible();
+  const bibtex = await page.evaluate(() => window.copiedText);
+  expect(bibtex).toContain(`eprint = {${arxivId}}`);
+  expect(bibtex).toContain('archivePrefix = {arXiv}');
+  await card.getByRole('button', { name: 'Save' }).click();
+  await expect(card.getByRole('button', { name: 'Saved' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Saved 1' })).toBeVisible();
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Saved 1' }).click();
+  await expect(page.locator('#arxivSubtitle')).toHaveText('Read later · saved on this device');
+  await expect(page.locator('#arxivList .research-card-link')).toHaveText([title]);
+  await page.locator('#arxivList').getByRole('button', { name: 'Saved' }).click();
+  await expect(page.locator('#arxivList')).toContainText('Use Save on any paper');
+  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('an empty arXiv update keeps cached papers instead of clearing the panel', async ({ page, worker, extensionId }) => {
@@ -150,6 +213,71 @@ test('an empty arXiv update keeps cached papers instead of clearing the panel', 
   // The cache entry survives the empty update.
   await page.reload();
   await expect(page.locator('#arxivList .research-card')).toHaveCount(count);
+});
+
+test('trend window switch loads newly created repositories and the area filter narrows them', async ({ page, worker, extensionId }) => {
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#favoriteStatus')).toContainText('Active 180d');
+  await expect(page.locator('#favoriteList .research-card')).toHaveCount(10);
+  await page.locator('#trendWindowSwitch [data-window="new30"]').click();
+  await expect(page.locator('#trendWindowSwitch [data-window="new30"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#trendSubtitle')).toContainText('New 30d');
+  await expect(page.locator('#favoriteStatus')).toContainText('New 30d');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('fixture-new/');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('created 5d ago');
+  await page.locator('#trendAreaFilter').selectOption('Energy Systems');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('Energy');
+  await page.locator('#trendAreaFilter').selectOption('VLA & Research Agents');
+  await expect(page.locator('#favoriteList .feed-empty')).toContainText('No VLA & Research Agents projects in New 30d');
+  // Both preferences survive a reload and the Active window keeps its own cache.
+  await page.reload();
+  await expect(page.locator('#trendWindowSwitch [data-window="new30"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#trendAreaFilter')).toHaveValue('VLA & Research Agents');
+  await page.locator('#trendAreaFilter').selectOption('');
+  await page.locator('#trendWindowSwitch [data-window="active180"]').click();
+  await expect(page.locator('#favoriteStatus')).toContainText('Cached < 1h');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('fixture-lab/');
+});
+
+test('an OSS Insight upstream outage is reported separately and GitHub Search fills the list', async ({ page, worker, extensionId }) => {
+  await worker.evaluate(() => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input.url);
+      if (url.hostname === 'api.ossinsight.io') {
+        return new Response(JSON.stringify({ data: { rows: [] }, data_quality: { status: 'unavailable', unavailable_since: '2026-03-01' } }));
+      }
+      if (url.hostname === 'api.github.com') {
+        const created = new URL(url);
+        created.searchParams.set('q', `${url.searchParams.get('q')} created:>=2026-01-01`);
+        return original(created.toString(), init);
+      }
+      return original(input, init);
+    };
+  });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#favoriteStatus')).toContainText('OSS Insight ranking paused upstream');
+  await expect(page.locator('#favoriteStatus')).toContainText('complete coverage');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('fixture-new/');
+});
+
+test('panel refresh buttons bypass fresh caches and show when each panel was updated', async ({ page, worker, extensionId }) => {
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#arxivUpdated')).toHaveText('Updated just now');
+  await expect(page.locator('#scourUpdated')).toHaveText('Updated just now');
+  await expect(page.locator('#trendUpdated')).toHaveText('Updated just now');
+  await page.reload();
+  await expect(page.locator('#trendList .research-card, #favoriteList .research-card').first()).toBeVisible();
+  const before = await worker.evaluate(() => ({ ...fetchCounts }));
+  // The trend cache is still fresh, so only the button may trigger another request.
+  await page.locator('#trendPanelRefreshBtn').click();
+  await expect.poll(() => worker.evaluate(() => fetchCounts['api.ossinsight.io'] || 0)).toBeGreaterThan(before['api.ossinsight.io'] || 0);
+  await expect(page.locator('#trendPanelRefreshBtn')).toBeEnabled();
+  await page.locator('#scourPanelRefreshBtn').click();
+  await expect.poll(() => worker.evaluate(() => fetchCounts['scour.ing'] || 0)).toBeGreaterThan(before['scour.ing'] || 0);
+  await page.locator('#arxivPanelRefreshBtn').click();
+  await expect.poll(() => worker.evaluate(() => fetchCounts['rss.arxiv.org'] || 0)).toBeGreaterThan(before['rss.arxiv.org'] || 0);
+  await expect(page.locator('#arxivUpdated')).toHaveText('Updated just now');
 });
 
 test('a Scour browser check is reported as blocked, not as an empty feed', async ({ page, worker, extensionId }) => {
@@ -456,6 +584,73 @@ test('new installations have no personal avatar or Scour feed, and connecting a 
   await expect.poll(() => page.evaluate(async () => (await chrome.storage.local.get('scourUrl')).scourUrl)).toBe('https://scour.ing/@reader');
   await page.locator('#settingsCloseBtn').click();
   await expect(page.locator('#scourList .research-card')).toHaveCount(10);
+});
+
+test('the Google account picture is opt-in, replaces the fallback icon and is removed on disconnect', async ({ page, context, extensionId }) => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await context.route(/^https:\/\/lh3\.googleusercontent\.com\//, route => route.fulfill({ contentType: 'image/png', body: png }));
+  await page.addInitScript(() => {
+    const manifest = chrome.runtime.getManifest();
+    chrome.runtime.getManifest = () => ({ ...manifest, oauth2: { ...manifest.oauth2, client_id: '123-test.apps.googleusercontent.com' } });
+    let granted = false;
+    const containsOriginal = chrome.permissions.contains.bind(chrome.permissions);
+    chrome.permissions.contains = async request => request.permissions?.includes('identity') ? granted : containsOriginal(request);
+    chrome.permissions.request = async request => { window.requestedIdentity = request; granted = true; return true; };
+    chrome.permissions.remove = async () => { granted = false; return true; };
+    window.removedTokens = [];
+    chrome.identity = {
+      getAuthToken: async ({ interactive }) => { window.lastInteractive = interactive; const value = ['fixture', 'grant'].join('-'); return { token: value }; },
+      removeCachedAuthToken: async ({ token }) => { window.removedTokens.push(token); },
+      onSignInChanged: { addListener() {} }
+    };
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (url, init) => String(url).startsWith('https://www.googleapis.com/oauth2/v3/userinfo')
+      ? new Response(JSON.stringify({ sub: '1', picture: 'https://lh3.googleusercontent.com/a/fixture=s96-c' }), { headers: { 'content-type': 'application/json' } })
+      : originalFetch(url, init);
+  });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#avatarBtn .icon-account_circle')).toBeVisible();
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#googleAvatarState')).toContainText('Off');
+  await page.getByRole('button', { name: 'Use Google account picture' }).click();
+  expect(await page.evaluate(() => window.requestedIdentity)).toEqual({ permissions: ['identity'], origins: ['https://www.googleapis.com/*'] });
+  await expect(page.locator('#googleAvatarState')).toContainText('Showing the picture of the Google account');
+  await expect(page.locator('#avatarBtn')).toHaveClass(/has-image/);
+  expect(await page.evaluate(() => window.lastInteractive)).toBe(true);
+  await expect.poll(() => page.evaluate(async () => (await chrome.storage.local.get('googleProfile')).googleProfile?.picture))
+    .toBe('https://lh3.googleusercontent.com/a/fixture=s96-c');
+  expect(await page.evaluate(async () => (await chrome.storage.sync.get(null)).googleProfile)).toBeUndefined();
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(page.locator('#googleAvatarState')).toContainText('Off');
+  await expect(page.locator('#avatarBtn .icon-account_circle')).toBeVisible();
+  expect(await page.evaluate(() => window.removedTokens)).toEqual(['fixture-grant']);
+  expect(await page.evaluate(async () => (await chrome.storage.local.get('googleProfile')).googleProfile)).toBeUndefined();
+});
+
+test('a changed Google account picture replaces the saved one on the next new tab without prompting', async ({ page, context, worker, extensionId }) => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await context.route(/^https:\/\/lh3\.googleusercontent\.com\//, route => route.fulfill({ contentType: 'image/png', body: png }));
+  await worker.evaluate(() => chrome.storage.local.set({ googleProfile: { picture: 'https://lh3.googleusercontent.com/a/old=s96-c', fetchedAt: Date.now() - 5 * 60 * 1000 } }));
+  await page.addInitScript(() => {
+    const manifest = chrome.runtime.getManifest();
+    chrome.runtime.getManifest = () => ({ ...manifest, oauth2: { ...manifest.oauth2, client_id: '123-test.apps.googleusercontent.com' } });
+    const containsOriginal = chrome.permissions.contains.bind(chrome.permissions);
+    chrome.permissions.contains = async request => request.permissions?.includes('identity') ? true : containsOriginal(request);
+    chrome.identity = {
+      getAuthToken: async ({ interactive }) => { window.lastInteractive = interactive; const value = ['fixture', 'grant'].join('-'); return { token: value }; },
+      removeCachedAuthToken: async () => {},
+      onSignInChanged: { addListener() {} }
+    };
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (url, init) => String(url).startsWith('https://www.googleapis.com/oauth2/v3/userinfo')
+      ? new Response(JSON.stringify({ sub: '1', picture: 'https://lh3.googleusercontent.com/a/new=s96-c' }), { headers: { 'content-type': 'application/json' } })
+      : originalFetch(url, init);
+  });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#avatarBtn')).toHaveAttribute('style', /a\/new=s96-c/);
+  expect(await page.evaluate(() => window.lastInteractive)).toBe(false);
+  await expect.poll(() => page.evaluate(async () => (await chrome.storage.local.get('googleProfile')).googleProfile?.picture))
+    .toBe('https://lh3.googleusercontent.com/a/new=s96-c');
 });
 
 test('Scour cache is bound to the selected profile', async ({ page, worker, extensionId }) => {

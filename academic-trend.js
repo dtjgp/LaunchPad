@@ -93,6 +93,27 @@
     }
   ];
 
+  const TREND_WINDOWS = [
+    { id: 'active180', label: 'Active 180d', days: 180, qualifier: 'pushed', useOssInsight: true },
+    { id: 'new90', label: 'New 90d', days: 90, qualifier: 'created', useOssInsight: false },
+    { id: 'new30', label: 'New 30d', days: 30, qualifier: 'created', useOssInsight: false }
+  ];
+  const DEFAULT_TREND_WINDOW = 'active180';
+
+  function getTrendWindow(id) {
+    return TREND_WINDOWS.find(item => item.id === id) ||
+      TREND_WINDOWS.find(item => item.id === DEFAULT_TREND_WINDOW);
+  }
+
+  function readOssInsightUnavailable(payload) {
+    const quality = payload?.data_quality;
+    if (!quality || quality.status !== 'unavailable') return null;
+    return {
+      since: typeof quality.unavailable_since === 'string' ? quality.unavailable_since : '',
+      reason: typeof quality.reason === 'string' ? quality.reason : ''
+    };
+  }
+
   function toFiniteNumber(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number : 0;
@@ -156,6 +177,7 @@
         forks: toFiniteNumber(row.forks_count),
         openIssues: toFiniteNumber(row.open_issues_count),
         updated: typeof row.pushed_at === 'string' ? row.pushed_at : '',
+        created: typeof row.created_at === 'string' ? row.created_at : '',
         topics: normalizeStringArray(row.topics),
         seedAreas: typeof area === 'string' ? [area] : [],
         license: typeof row.license?.spdx_id === 'string' ? row.license.spdx_id : '',
@@ -220,6 +242,7 @@
         toFiniteNumber(incoming.sourceScore)
       ),
       updated: updatedCandidates.at(-1) || '',
+      created: [existing.created, incoming.created].filter(Boolean).sort()[0] || '',
       topics: normalizeStringArray([...(existing.topics || []), ...(incoming.topics || [])]),
       seedAreas: normalizeStringArray([
         ...(existing.seedAreas || []),
@@ -347,14 +370,15 @@
       .slice(0, limit);
   }
 
-  function buildGithubSearchRequests(now = Date.now()) {
+  function buildGithubSearchRequests(now = Date.now(), windowId = DEFAULT_TREND_WINDOW) {
     const referenceTime = Number.isFinite(now) ? now : Date.now();
-    const since = new Date(referenceTime - 180 * 86400000).toISOString().slice(0, 10);
+    const trendWindow = getTrendWindow(windowId);
+    const since = new Date(referenceTime - trendWindow.days * 86400000).toISOString().slice(0, 10);
     return SEARCH_PROFILES.map(profile => {
       const url = new URL('https://api.github.com/search/repositories');
       url.searchParams.set(
         'q',
-        `${profile.query} pushed:>=${since} archived:false fork:false stars:>=2`
+        `${profile.query} ${trendWindow.qualifier}:>=${since} archived:false fork:false stars:>=2`
       );
       url.searchParams.set('sort', 'stars');
       url.searchParams.set('order', 'desc');
@@ -386,8 +410,12 @@
   }
 
   return {
+    DEFAULT_TREND_WINDOW,
     PROFILE_AREAS,
+    TREND_WINDOWS,
     buildGithubSearchRequests,
+    getTrendWindow,
+    readOssInsightUnavailable,
     createTrendCache,
     isFreshTrendCache,
     mergeAndRankRepositories,

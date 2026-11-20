@@ -9,9 +9,17 @@
   const GOOGLE_SUGGEST_ORIGIN = `https://${GOOGLE_SUGGEST_HOST}/*`;
   const MAX_SUGGEST_QUERY_LENGTH = 512;
   const MAX_SUGGESTIONS = 7;
+  const HF_HOST = 'huggingface.co';
+  const HF_DAILY_ORIGIN = `https://${HF_HOST}/*`;
   const FETCH_RULES = {
     fetchArxiv(url) {
-      return url.hostname === 'export.arxiv.org' && url.pathname.startsWith('/rss/');
+      return url.hostname === 'rss.arxiv.org' && url.pathname.startsWith('/rss/');
+    },
+    fetchHfDaily(url) {
+      const limit = Number(url.searchParams.get('limit') || '0');
+      return url.hostname === HF_HOST && url.pathname === '/api/daily_papers' &&
+        Number.isInteger(limit) && limit >= 1 && limit <= 100 &&
+        Array.from(url.searchParams.keys()).every(key => key === 'limit');
     },
     fetchScour(url) {
       return url.hostname === 'scour.ing' || url.hostname === 'www.scour.ing';
@@ -169,6 +177,33 @@
     };
 
     return normalizeAvatar(customValue) || normalizeAvatar(fallbackValue);
+  }
+
+  // Optional Google account picture: Chrome's OAuth flow with the profile scope only.
+  const GOOGLE_PROFILE_ORIGIN = 'https://www.googleapis.com/*';
+  const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
+  const GOOGLE_PROFILE_MAX_AGE_MS = 60 * 1000;
+  const GOOGLE_PROFILE_STORAGE_KEY = 'googleProfile';
+
+  function isOAuthClientConfigured(manifest) {
+    const clientId = manifest?.oauth2?.client_id;
+    return typeof clientId === 'string' && /^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId) &&
+      !clientId.startsWith('YOUR_CLIENT_ID');
+  }
+
+  function readAuthToken(result) {
+    const token = typeof result === 'string' ? result : result?.token;
+    return typeof token === 'string' && token ? token : '';
+  }
+
+  function readGoogleProfilePicture(payload) {
+    return resolveAvatarUrl(typeof payload?.picture === 'string' ? payload.picture : '');
+  }
+
+  function readCachedGoogleProfile(value, now = Date.now()) {
+    const picture = resolveAvatarUrl(typeof value?.picture === 'string' ? value.picture : '');
+    if (!picture || !Number.isFinite(value?.fetchedAt)) return null;
+    return { picture, fetchedAt: value.fetchedAt, fresh: now - value.fetchedAt >= 0 && now - value.fetchedAt < GOOGLE_PROFILE_MAX_AGE_MS };
   }
 
   function validateShortcut(nameValue, urlValue) {
@@ -379,6 +414,16 @@
       ? navigator.locks.request('launchpad-settings', write) : write();
   }
 
+  function formatUpdatedAgo(timestamp, now = Date.now()) {
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+    const minutes = Math.floor(Math.max(0, now - timestamp) / 60000);
+    if (minutes < 1) return 'Updated just now';
+    if (minutes < 60) return `Updated ${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Updated ${hours} h ago`;
+    return `Updated ${Math.floor(hours / 24)} d ago`;
+  }
+
   function createSettingsWriter(storage, initial = {}) {
     let baseline = clone(initial);
     let queue = Promise.resolve();
@@ -408,8 +453,17 @@
     buildGoogleSuggestUrl,
     parseGoogleSuggestions,
     GOOGLE_SUGGEST_ORIGIN,
+    HF_DAILY_ORIGIN,
     getSearchInputError,
     resolveAvatarUrl,
+    GOOGLE_PROFILE_ORIGIN,
+    GOOGLE_USERINFO_URL,
+    GOOGLE_PROFILE_MAX_AGE_MS,
+    GOOGLE_PROFILE_STORAGE_KEY,
+    isOAuthClientConfigured,
+    readAuthToken,
+    readGoogleProfilePicture,
+    readCachedGoogleProfile,
     saveSettings,
     selectNewestStorage,
     summarizeSettledResults,
@@ -419,6 +473,7 @@
     normalizeScourProfile,
     isScourBrowserCheck,
     createSettingsWriter,
+    formatUpdatedAgo,
     settingsEqual,
     sanitizeStoredSettings,
     STORAGE_KEYS

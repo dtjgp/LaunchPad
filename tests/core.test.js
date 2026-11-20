@@ -11,6 +11,11 @@ const {
   isScourBrowserCheck,
   getSearchInputError,
   resolveAvatarUrl,
+  isOAuthClientConfigured,
+  readAuthToken,
+  readGoogleProfilePicture,
+  readCachedGoogleProfile,
+  GOOGLE_PROFILE_MAX_AGE_MS,
   saveSettings,
   selectNewestStorage,
   summarizeSettledResults,
@@ -72,6 +77,17 @@ test('suggestion URLs carry only the typed query and never credential-bearing in
     'https://google.com/complete/search?client=chrome&ie=utf-8&oe=utf-8&q=a',
     'https://www.google.com/search?client=chrome&ie=utf-8&oe=utf-8&q=a'
   ]) assert.equal(validateFetchTarget('fetchSuggest', url).ok, false, url);
+});
+
+test('Hugging Face fetches are limited to the daily papers API', () => {
+  assert.equal(validateFetchTarget('fetchHfDaily', 'https://huggingface.co/api/daily_papers?limit=100').ok, true);
+  for (const url of [
+    'https://huggingface.co/api/daily_papers?limit=101',
+    'https://huggingface.co/api/daily_papers?limit=10&search=x',
+    'https://huggingface.co/api/models?limit=10',
+    'https://evil.huggingface.co/api/daily_papers?limit=10',
+    'http://huggingface.co/api/daily_papers?limit=10'
+  ]) assert.equal(validateFetchTarget('fetchHfDaily', url).ok, false, url);
 });
 
 test('parseGoogleSuggestions keeps query and navigation matches and rejects malformed payloads', () => {
@@ -138,6 +154,23 @@ test('resolveAvatarUrl prefers a custom image and falls back to the Google profi
   assert.equal(resolveAvatarUrl('', 'http://example.com/avatar.png'), '');
 });
 
+test('Google profile helpers accept only a configured client, HTTPS pictures and fresh caches', () => {
+  assert.equal(isOAuthClientConfigured({ oauth2: { client_id: 'YOUR_CLIENT_ID.apps.googleusercontent.com' } }), false);
+  assert.equal(isOAuthClientConfigured({}), false);
+  assert.equal(isOAuthClientConfigured({ oauth2: { client_id: '123-abc.apps.googleusercontent.com' } }), true);
+  assert.equal(readAuthToken('t1'), 't1');
+  assert.equal(readAuthToken({ token: 't2' }), 't2');
+  assert.equal(readAuthToken(undefined), '');
+  assert.equal(readGoogleProfilePicture({ picture: 'https://lh3.googleusercontent.com/a/x' }), 'https://lh3.googleusercontent.com/a/x');
+  assert.equal(readGoogleProfilePicture({ picture: 'http://lh3.googleusercontent.com/a/x' }), '');
+  assert.equal(readGoogleProfilePicture(null), '');
+  const now = 1_000_000_000;
+  assert.deepEqual(readCachedGoogleProfile({ picture: 'https://a.example/p.png', fetchedAt: now - 1000 }, now),
+    { picture: 'https://a.example/p.png', fetchedAt: now - 1000, fresh: true });
+  assert.equal(readCachedGoogleProfile({ picture: 'https://a.example/p.png', fetchedAt: now - GOOGLE_PROFILE_MAX_AGE_MS - 1 }, now).fresh, false);
+  assert.equal(readCachedGoogleProfile({ picture: 'javascript:alert(1)', fetchedAt: now }, now), null);
+});
+
 test('normalizeHttpUrl accepts web URLs and resolves relative links', () => {
   assert.equal(normalizeHttpUrl('example.com'), 'https://example.com/');
   assert.equal(
@@ -160,7 +193,7 @@ test('normalizeHttpUrl rejects unsafe schemes and credential-bearing URLs', () =
 
 test('validateFetchTarget binds message types to intended hosts', () => {
   assert.equal(
-    validateFetchTarget('fetchArxiv', 'https://export.arxiv.org/rss/cs.AI').ok,
+    validateFetchTarget('fetchArxiv', 'https://rss.arxiv.org/rss/cs.AI').ok,
     true
   );
   assert.equal(
@@ -205,7 +238,11 @@ test('validateFetchTarget binds message types to intended hosts', () => {
     false
   );
   assert.equal(
-    validateFetchTarget('fetchArxiv', 'https://export.arxiv.org/api/query').ok,
+    validateFetchTarget('fetchArxiv', 'https://rss.arxiv.org/api/query').ok,
+    false
+  );
+  assert.equal(
+    validateFetchTarget('fetchArxiv', 'https://export.arxiv.org/rss/cs.AI').ok,
     false
   );
 });

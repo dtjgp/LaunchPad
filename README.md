@@ -14,9 +14,9 @@ See [INSTALL.md](INSTALL.md) for full installation, update and removal instructi
 
 - **Search and launch**: a search box styled like Chrome's new tab page, with Google-only queries, direct HTTP(S)/local URLs, browser voice input when available, Google Lens and an AI Mode button. Optional Google suggestions (off by default) appear in a Chrome-style dropdown.
 - **Shortcuts**: add, edit, remove and drag to reorder in the popup and new tab. Hover or focus a tile to find its More menu; right-click also works.
-- **arXiv Radar**: four research tracks combine RSS categories and text filters. Advanced filters support phrases, AND/OR and grouped expressions, with clear syntax errors and saved views.
+- **arXiv Radar**: four research tracks combine RSS categories and text filters. Advanced filters support phrases, AND/OR and grouped expressions, with clear syntax errors and saved views. A **Latest | HF Hot** switch shows Hugging Face Daily Papers ranked by upvotes (optional `huggingface.co` access); papers that match show their upvotes and a Code link when a GitHub repository is listed. Every arXiv card links its PDF, copies a BibTeX entry, and can be saved to a **Saved** read-later list kept in local extension storage on this device.
 - **Scour Inbox**: connect a public profile in Settings. A new installation has no personal feed configured. Source changes do not reuse another profile's cached items.
-- **Academic GitHub**: research-profile ranking over OSS Insight's seven-day candidate pool and GitHub Search fallbacks. The displayed source/window/coverage describe which data was actually available.
+- **Academic GitHub**: research-profile ranking with three windows — **Active** (OSS Insight's seven-day pool plus GitHub Search repos pushed in 180 days), **New 90d** and **New 30d** (GitHub Search repos created in that window) — and a research-area filter. Each window has its own one-hour cache. When OSS Insight reports its trend data as unavailable upstream, the status says so and GitHub Search fills the list instead of reporting a failure. The displayed source/window/coverage describe which data was actually available.
 - **Themes and layout**: light, dark and system modes, adjustable research-panel visibility, responsive layouts and keyboard-accessible controls.
 
 The research tracks cover Edge AI/model compression, communication systems, energy systems and VLA/research agents. Keyword matches and ranking scores help discovery; they do not assess paper quality. GitHub stars are total counts, not seven-day star growth.
@@ -34,7 +34,13 @@ The research tracks cover Edge AI/model compression, communication systems, ener
 | Show/hide research panels | arXiv / Trend controls at the top |
 | Configure sources and appearance | Settings |
 
-The account button opens configurable links to Google account pages. LaunchPad does not read your Google profile or sign-in status. You can optionally supply an HTTPS avatar image.
+The account button opens configurable links to Google account pages. In Settings, **Use Google account picture** (off by default) shows the picture of the Google account signed in to Chrome; it requests the optional `identity` permission and `www.googleapis.com` access, reads only the `userinfo.profile` picture, keeps the image URL on this device and re-checks it silently each time a new tab opens or becomes visible again (at most once a minute), when the Chrome sign-in changes, or with **Refresh picture**. **Disconnect** removes the token, the saved picture and both permissions. An optional HTTPS custom avatar is used when the Google picture is off or unavailable.
+
+#### Enable the Google account picture in your build
+
+The manifest pins the extension ID `bhppmjiledkmeodkecnbdipllhlabplh` (top-level `"key"`) and ships a matching OAuth client ID. While the Google Cloud OAuth app is in **Testing** status, only Google accounts added as test users can connect.
+
+For your own fork with a different key or Cloud project: create an OAuth client ID of type **Chrome Extension** for your extension ID, put it in `manifest.json` → `oauth2.client_id`, and reload the extension. Keep the private `.pem` out of the repository.
 
 ### Filter examples
 
