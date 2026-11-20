@@ -89,3 +89,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })();
   return true;
 });
+
+// The cached Google account picture belongs to the Chrome account; drop it when that account changes.
+chrome.identity?.onSignInChanged?.addListener(() => {
+  chrome.storage.local.remove(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY).catch(() => {});
+});

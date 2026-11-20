@@ -179,6 +179,33 @@
     return normalizeAvatar(customValue) || normalizeAvatar(fallbackValue);
   }
 
+  // Optional Google account picture: Chrome's OAuth flow with the profile scope only.
+  const GOOGLE_PROFILE_ORIGIN = 'https://www.googleapis.com/*';
+  const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
+  const GOOGLE_PROFILE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+  const GOOGLE_PROFILE_STORAGE_KEY = 'googleProfile';
+
+  function isOAuthClientConfigured(manifest) {
+    const clientId = manifest?.oauth2?.client_id;
+    return typeof clientId === 'string' && /^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId) &&
+      !clientId.startsWith('YOUR_CLIENT_ID');
+  }
+
+  function readAuthToken(result) {
+    const token = typeof result === 'string' ? result : result?.token;
+    return typeof token === 'string' && token ? token : '';
+  }
+
+  function readGoogleProfilePicture(payload) {
+    return resolveAvatarUrl(typeof payload?.picture === 'string' ? payload.picture : '');
+  }
+
+  function readCachedGoogleProfile(value, now = Date.now()) {
+    const picture = resolveAvatarUrl(typeof value?.picture === 'string' ? value.picture : '');
+    if (!picture || !Number.isFinite(value?.fetchedAt)) return null;
+    return { picture, fetchedAt: value.fetchedAt, fresh: now - value.fetchedAt >= 0 && now - value.fetchedAt < GOOGLE_PROFILE_MAX_AGE_MS };
+  }
+
   function validateShortcut(nameValue, urlValue) {
     const name = typeof nameValue === 'string' ? nameValue.trim() : '';
     const inputUrl = typeof urlValue === 'string' ? urlValue.trim() : '';
@@ -429,6 +456,14 @@
     HF_DAILY_ORIGIN,
     getSearchInputError,
     resolveAvatarUrl,
+    GOOGLE_PROFILE_ORIGIN,
+    GOOGLE_USERINFO_URL,
+    GOOGLE_PROFILE_MAX_AGE_MS,
+    GOOGLE_PROFILE_STORAGE_KEY,
+    isOAuthClientConfigured,
+    readAuthToken,
+    readGoogleProfilePicture,
+    readCachedGoogleProfile,
     saveSettings,
     selectNewestStorage,
     summarizeSettledResults,

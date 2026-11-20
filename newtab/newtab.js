@@ -19,6 +19,9 @@ const settingsPanel = document.getElementById('settingsPanel');
 const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 const settingsStatus = document.getElementById('settingsStatus');
 const avatarUrlInput = document.getElementById('avatarUrlInput');
+const googleAvatarConnectBtn = document.getElementById('googleAvatarConnectBtn');
+const googleAvatarDisconnectBtn = document.getElementById('googleAvatarDisconnectBtn');
+const googleAvatarStateEl = document.getElementById('googleAvatarState');
 const appsList = document.getElementById('appsList');
 const accountList = document.getElementById('accountList');
 const appNameInput = document.getElementById('appNameInput');
@@ -122,6 +125,10 @@ let readingList = [];
 const renderedArxivItems = new Map();
 let previewRequestVersion = 0;
 let avatarRequestVersion = 0;
+let googleAvatarUrl = '';
+let googleAvatarState = 'off';
+let googleAvatarRequestVersion = 0;
+let googleSignInWatched = false;
 
 const LOG_STORAGE_KEY = 'logs';
 const MAX_LOGS = 200;
@@ -431,6 +438,7 @@ async function init() {
   settingsWriter = LaunchPadCore.createSettingsWriter(chrome.storage, { ...buildSettingsSnapshot(), ...restoredSettings });
   applyTheme();
   applyAvatar();
+  void syncGoogleAvatar();
   render();
   renderMenus();
   applyArxivControls();
@@ -661,28 +669,183 @@ function renderAvatarFallback() {
   avatarBtn.setAttribute('aria-label', 'Google account links');
 }
 
+// The Google account picture (when connected) wins; a custom URL is the fallback.
 function applyAvatar() {
-  const resolvedAvatarUrl = LaunchPadCore.resolveAvatarUrl(avatarUrl);
+  const candidates = [...new Set([
+    LaunchPadCore.resolveAvatarUrl(googleAvatarUrl),
+    LaunchPadCore.resolveAvatarUrl(avatarUrl)
+  ].filter(Boolean))];
   const requestVersion = ++avatarRequestVersion;
-  if (!resolvedAvatarUrl) {
-    renderAvatarFallback();
+  const tryAvatar = index => {
+    const resolvedAvatarUrl = candidates[index];
+    if (!resolvedAvatarUrl) {
+      renderAvatarFallback();
+      return;
+    }
+    const avatarImage = new Image();
+    avatarImage.onload = () => {
+      if (requestVersion !== avatarRequestVersion) return;
+      avatarBtn.style.backgroundImage = `url("${resolvedAvatarUrl.replace(/["\\]/g, '')}")`;
+      avatarBtn.classList.add('has-image');
+      avatarBtn.textContent = '';
+      avatarBtn.title = 'Google account links';
+      avatarBtn.setAttribute('aria-label', 'Google account links');
+    };
+    avatarImage.onerror = () => {
+      if (requestVersion !== avatarRequestVersion) return;
+      tryAvatar(index + 1);
+    };
+    avatarImage.src = resolvedAvatarUrl;
+  };
+  tryAvatar(0);
+}
+
+function setGoogleAvatarState(state, message = '') {
+  googleAvatarState = state;
+  const configured = state !== 'unconfigured';
+  const connected = ['connected', 'stale', 'loading'].includes(state);
+  if (googleAvatarConnectBtn) {
+    googleAvatarConnectBtn.disabled = !configured || state === 'loading';
+    googleAvatarConnectBtn.textContent = connected ? 'Refresh picture' : 'Use Google account picture';
+  }
+  if (googleAvatarDisconnectBtn) googleAvatarDisconnectBtn.hidden = !connected && state !== 'error';
+  if (!googleAvatarStateEl) return;
+  googleAvatarStateEl.textContent = message || {
+    unconfigured: 'Not configured in this build: add a Google OAuth client ID to manifest.json (see README).',
+    off: 'Off. LaunchPad does not read your Google profile.',
+    loading: 'Reading the Chrome account picture…',
+    connected: 'Showing the picture of the Google account signed in to Chrome.',
+    'signed-out': 'Chrome is not signed in to a Google account. Showing the custom avatar or default icon.'
+  }[state] || '';
+}
+
+async function hasGoogleAvatarAccess() {
+  try {
+    return await chrome.permissions.contains({ permissions: ['identity'], origins: [LaunchPadCore.GOOGLE_PROFILE_ORIGIN] });
+  } catch {
+    return false;
+  }
+}
+
+async function requestGoogleToken(interactive) {
+  const token = LaunchPadCore.readAuthToken(await chrome.identity.getAuthToken({ interactive }));
+  if (!token) throw new Error('Chrome did not return a Google token');
+  return token;
+}
+
+async function fetchGoogleProfilePicture(interactive) {
+  let token = await requestGoogleToken(interactive);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(LaunchPadCore.GOOGLE_USERINFO_URL, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'omit',
+      cache: 'no-store'
+    });
+    if (response.status === 401 && attempt === 0) {
+      // An expired cached token: drop it and ask Chrome for a fresh one once.
+      await chrome.identity.removeCachedAuthToken({ token });
+      token = await requestGoogleToken(interactive);
+      continue;
+    }
+    if (!response.ok) throw new Error(`Google profile request failed (HTTP ${response.status})`);
+    return LaunchPadCore.readGoogleProfilePicture(await response.json());
+  }
+  throw new Error('Google rejected the refreshed token');
+}
+
+function watchGoogleSignIn() {
+  if (googleSignInWatched || !chrome.identity?.onSignInChanged) return;
+  googleSignInWatched = true;
+  chrome.identity.onSignInChanged.addListener((_account, signedIn) => {
+    googleAvatarUrl = '';
+    applyAvatar();
+    void chrome.storage.local.remove(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY).catch(() => {});
+    if (signedIn) void syncGoogleAvatar({ force: true });
+    else setGoogleAvatarState('signed-out');
+  });
+}
+
+async function syncGoogleAvatar({ interactive = false, force = false } = {}) {
+  const requestVersion = ++googleAvatarRequestVersion;
+  if (!LaunchPadCore.isOAuthClientConfigured(chrome.runtime.getManifest())) {
+    setGoogleAvatarState('unconfigured');
     return;
   }
+  if (!await hasGoogleAvatarAccess()) {
+    if (requestVersion !== googleAvatarRequestVersion) return;
+    if (googleAvatarUrl) { googleAvatarUrl = ''; applyAvatar(); }
+    setGoogleAvatarState('off');
+    return;
+  }
+  watchGoogleSignIn();
+  let cached = null;
+  try {
+    const stored = await chrome.storage.local.get(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY);
+    cached = LaunchPadCore.readCachedGoogleProfile(stored[LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY]);
+  } catch (error) {
+    logEvent('warn', 'Google profile cache read failed', { error: error.message });
+  }
+  if (requestVersion !== googleAvatarRequestVersion) return;
+  if (cached && cached.picture !== googleAvatarUrl) { googleAvatarUrl = cached.picture; applyAvatar(); }
+  if (cached?.fresh && !force) {
+    setGoogleAvatarState('connected');
+    return;
+  }
+  setGoogleAvatarState('loading');
+  try {
+    const picture = await fetchGoogleProfilePicture(interactive);
+    if (requestVersion !== googleAvatarRequestVersion) return;
+    googleAvatarUrl = picture;
+    applyAvatar();
+    if (!picture) {
+      await chrome.storage.local.remove(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY);
+      setGoogleAvatarState('connected', 'Connected, but this Google account has no profile picture. Showing the custom avatar or default icon.');
+      return;
+    }
+    try {
+      await chrome.storage.local.set({ [LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY]: { picture, fetchedAt: Date.now() } });
+      setGoogleAvatarState('connected');
+    } catch (error) {
+      setGoogleAvatarState('connected', 'Showing the Google account picture, but it could not be saved on this device; it will be read again next time.');
+      logEvent('warn', 'Google profile cache write failed', { error: error.message });
+    }
+  } catch (error) {
+    if (requestVersion !== googleAvatarRequestVersion) return;
+    logEvent('warn', 'Google profile picture failed', { error: error.message });
+    setGoogleAvatarState(cached ? 'stale' : 'error', cached
+      ? `Could not refresh the Google picture (${error.message}). Showing the last saved one.`
+      : `Could not read the Google account picture: ${error.message}`);
+  }
+}
 
-  const avatarImage = new Image();
-  avatarImage.onload = () => {
-    if (requestVersion !== avatarRequestVersion) return;
-    avatarBtn.style.backgroundImage = `url("${resolvedAvatarUrl.replace(/["\\]/g, '')}")`;
-    avatarBtn.classList.add('has-image');
-    avatarBtn.textContent = '';
-    avatarBtn.title = 'Google account links';
-    avatarBtn.setAttribute('aria-label', 'Google account links');
-  };
-  avatarImage.onerror = () => {
-    if (requestVersion !== avatarRequestVersion) return;
-    renderAvatarFallback();
-  };
-  avatarImage.src = resolvedAvatarUrl;
+async function connectGoogleAvatar() {
+  // Request access first, inside the click gesture.
+  const granted = await chrome.permissions.request({ permissions: ['identity'], origins: [LaunchPadCore.GOOGLE_PROFILE_ORIGIN] }).catch(() => false);
+  if (!granted) {
+    setGoogleAvatarState('off', 'Chrome access was not granted. The Google account picture stays off.');
+    return;
+  }
+  await syncGoogleAvatar({ interactive: true, force: true });
+}
+
+async function disconnectGoogleAvatar() {
+  ++googleAvatarRequestVersion;
+  const failures = [];
+  try {
+    const token = LaunchPadCore.readAuthToken(await chrome.identity?.getAuthToken?.({ interactive: false }));
+    if (token) await chrome.identity.removeCachedAuthToken({ token });
+  } catch { /* No cached token to drop. */ }
+  try {
+    await chrome.storage.local.remove(LaunchPadCore.GOOGLE_PROFILE_STORAGE_KEY);
+  } catch (error) {
+    failures.push('the saved picture could not be removed');
+    logEvent('warn', 'Google profile cache removal failed', { error: error.message });
+  }
+  const removed = await chrome.permissions.remove({ permissions: ['identity'], origins: [LaunchPadCore.GOOGLE_PROFILE_ORIGIN] }).catch(() => false);
+  if (!removed) failures.push('Chrome access could not be removed');
+  googleAvatarUrl = '';
+  applyAvatar();
+  setGoogleAvatarState('off', failures.length ? `Disconnected, but ${failures.join(' and ')}. Try again.` : '');
 }
 
 function normalizeUrl(url) {
@@ -2630,6 +2793,11 @@ contextMenu.addEventListener('keydown', event => {
   if (next !== undefined) { event.preventDefault(); items[next].focus(); }
   if (event.key === 'Tab') closeContextMenu(true);
 });
+
+googleAvatarConnectBtn?.addEventListener('click', () => {
+  void (['connected', 'stale'].includes(googleAvatarState) ? syncGoogleAvatar({ interactive: true, force: true }) : connectGoogleAvatar());
+});
+googleAvatarDisconnectBtn?.addEventListener('click', () => void disconnectGoogleAvatar());
 
 // Auto-save valid avatar input, and flush the debounce when focus leaves the field.
 if (avatarUrlInput) {

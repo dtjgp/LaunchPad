@@ -297,9 +297,18 @@
             <div class="settings-help">Connect a public profile. Leave blank to disconnect.</div>
           </div>
           <div class="settings-section">
+            <div class="settings-label">Google account picture</div>
+            <div class="settings-add settings-inline">
+              <button id="googleAvatarConnectBtn" class="btn secondary" type="button">Use Google account picture</button>
+              <button id="googleAvatarDisconnectBtn" class="btn secondary" type="button" hidden>Disconnect</button>
+            </div>
+            <div id="googleAvatarState" class="settings-help" role="status"></div>
+            <div class="settings-help">Optional. Uses Chrome sign-in with the profile scope only to show the picture of the Google account signed in to Chrome. Off by default; the picture URL is kept on this device.</div>
+          </div>
+          <div class="settings-section">
             <label class="settings-label" for="avatarUrlInput">Custom avatar URL (optional)</label>
             <input id="avatarUrlInput" type="url" placeholder="https://..." aria-label="Custom avatar URL" />
-            <div class="settings-help">Optional HTTPS image. LaunchPad does not read your Google profile or sign-in status.</div>
+            <div class="settings-help">Optional HTTPS image, used when the Google account picture is off or unavailable.</div>
           </div>
         </div>
 

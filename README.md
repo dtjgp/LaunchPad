@@ -34,7 +34,15 @@ The research tracks cover Edge AI/model compression, communication systems, ener
 | Show/hide research panels | arXiv / Trend controls at the top |
 | Configure sources and appearance | Settings |
 
-The account button opens configurable links to Google account pages. LaunchPad does not read your Google profile or sign-in status. You can optionally supply an HTTPS avatar image.
+The account button opens configurable links to Google account pages. In Settings, **Use Google account picture** (off by default) shows the picture of the Google account signed in to Chrome; it requests the optional `identity` permission and `www.googleapis.com` access, reads only the `userinfo.profile` picture, keeps the image URL on this device and refreshes it every 6 hours or with **Refresh picture**. **Disconnect** removes the token, the saved picture and both permissions. An optional HTTPS custom avatar is used when the Google picture is off or unavailable.
+
+#### Enable the Google account picture in your build
+
+The repository ships a placeholder OAuth client, so Settings shows "Not configured" until you add your own:
+
+1. Give the extension a stable ID: in `chrome://extensions` use **Pack extension** once, then copy the public key into a top-level `"key"` field in `manifest.json` (or reuse the Chrome Web Store item key). Keep the private `.pem` out of the repository.
+2. In Google Cloud Console, configure the OAuth consent screen and create an OAuth client ID of type **Chrome Extension** with that extension ID.
+3. Replace `YOUR_CLIENT_ID.apps.googleusercontent.com` in `manifest.json` → `oauth2.client_id`, then reload the extension.
 
 ### Filter examples
 

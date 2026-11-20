@@ -34,10 +34,12 @@ test('side panels and cards have paired motion with reduced-motion protection', 
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.research-card/);
 });
 
-test('the account control uses a generic fallback and only loads a user-selected avatar', () => {
-  assert.match(html, /does not read your Google profile/);
+test('the account control uses a generic fallback and reads the Google picture only after opt-in', () => {
+  assert.match(html, /id="googleAvatarConnectBtn"/);
+  assert.match(html, /profile scope only/);
   assert.doesNotMatch(js, /DEFAULT_GOOGLE_AVATAR_URL|ACg8ocJK/);
-  assert.match(js, /resolveAvatarUrl\(avatarUrl\)/);
+  assert.match(js, /resolveAvatarUrl\(googleAvatarUrl\)[\s\S]*resolveAvatarUrl\(avatarUrl\)/);
+  assert.match(js, /permissions\.request\(\{ permissions: \['identity'\]/);
   assert.match(js, /avatarImage\.onerror/);
   assert.match(js, /icon-account_circle/);
 });

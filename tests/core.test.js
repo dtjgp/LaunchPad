@@ -11,6 +11,11 @@ const {
   isScourBrowserCheck,
   getSearchInputError,
   resolveAvatarUrl,
+  isOAuthClientConfigured,
+  readAuthToken,
+  readGoogleProfilePicture,
+  readCachedGoogleProfile,
+  GOOGLE_PROFILE_MAX_AGE_MS,
   saveSettings,
   selectNewestStorage,
   summarizeSettledResults,
@@ -147,6 +152,23 @@ test('resolveAvatarUrl prefers a custom image and falls back to the Google profi
   assert.equal(resolveAvatarUrl('', googleAvatar), googleAvatar);
   assert.equal(resolveAvatarUrl('javascript:alert(1)', googleAvatar), googleAvatar);
   assert.equal(resolveAvatarUrl('', 'http://example.com/avatar.png'), '');
+});
+
+test('Google profile helpers accept only a configured client, HTTPS pictures and fresh caches', () => {
+  assert.equal(isOAuthClientConfigured({ oauth2: { client_id: 'YOUR_CLIENT_ID.apps.googleusercontent.com' } }), false);
+  assert.equal(isOAuthClientConfigured({}), false);
+  assert.equal(isOAuthClientConfigured({ oauth2: { client_id: '123-abc.apps.googleusercontent.com' } }), true);
+  assert.equal(readAuthToken('t1'), 't1');
+  assert.equal(readAuthToken({ token: 't2' }), 't2');
+  assert.equal(readAuthToken(undefined), '');
+  assert.equal(readGoogleProfilePicture({ picture: 'https://lh3.googleusercontent.com/a/x' }), 'https://lh3.googleusercontent.com/a/x');
+  assert.equal(readGoogleProfilePicture({ picture: 'http://lh3.googleusercontent.com/a/x' }), '');
+  assert.equal(readGoogleProfilePicture(null), '');
+  const now = 1_000_000_000;
+  assert.deepEqual(readCachedGoogleProfile({ picture: 'https://a.example/p.png', fetchedAt: now - 1000 }, now),
+    { picture: 'https://a.example/p.png', fetchedAt: now - 1000, fresh: true });
+  assert.equal(readCachedGoogleProfile({ picture: 'https://a.example/p.png', fetchedAt: now - GOOGLE_PROFILE_MAX_AGE_MS - 1 }, now).fresh, false);
+  assert.equal(readCachedGoogleProfile({ picture: 'javascript:alert(1)', fetchedAt: now }, now), null);
 });
 
 test('normalizeHttpUrl accepts web URLs and resolves relative links', () => {

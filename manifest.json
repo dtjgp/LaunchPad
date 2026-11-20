@@ -29,6 +29,15 @@
     "https://api.ossinsight.io/*",
     "https://api.github.com/*"
   ],
+  "optional_permissions": [
+    "identity"
+  ],
+  "oauth2": {
+    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
   "optional_host_permissions": [
     "https://*/*"
   ],

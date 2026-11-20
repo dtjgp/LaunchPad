@@ -586,6 +586,47 @@ test('new installations have no personal avatar or Scour feed, and connecting a 
   await expect(page.locator('#scourList .research-card')).toHaveCount(10);
 });
 
+test('the Google account picture is opt-in, replaces the fallback icon and is removed on disconnect', async ({ page, context, extensionId }) => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await context.route(/^https:\/\/lh3\.googleusercontent\.com\//, route => route.fulfill({ contentType: 'image/png', body: png }));
+  await page.addInitScript(() => {
+    const manifest = chrome.runtime.getManifest();
+    chrome.runtime.getManifest = () => ({ ...manifest, oauth2: { ...manifest.oauth2, client_id: '123-test.apps.googleusercontent.com' } });
+    let granted = false;
+    const containsOriginal = chrome.permissions.contains.bind(chrome.permissions);
+    chrome.permissions.contains = async request => request.permissions?.includes('identity') ? granted : containsOriginal(request);
+    chrome.permissions.request = async request => { window.requestedIdentity = request; granted = true; return true; };
+    chrome.permissions.remove = async () => { granted = false; return true; };
+    window.removedTokens = [];
+    chrome.identity = {
+      getAuthToken: async ({ interactive }) => { window.lastInteractive = interactive; const value = ['fixture', 'grant'].join('-'); return { token: value }; },
+      removeCachedAuthToken: async ({ token }) => { window.removedTokens.push(token); },
+      onSignInChanged: { addListener() {} }
+    };
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (url, init) => String(url).startsWith('https://www.googleapis.com/oauth2/v3/userinfo')
+      ? new Response(JSON.stringify({ sub: '1', picture: 'https://lh3.googleusercontent.com/a/fixture=s96-c' }), { headers: { 'content-type': 'application/json' } })
+      : originalFetch(url, init);
+  });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#avatarBtn .icon-account_circle')).toBeVisible();
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#googleAvatarState')).toContainText('Off');
+  await page.getByRole('button', { name: 'Use Google account picture' }).click();
+  expect(await page.evaluate(() => window.requestedIdentity)).toEqual({ permissions: ['identity'], origins: ['https://www.googleapis.com/*'] });
+  await expect(page.locator('#googleAvatarState')).toContainText('Showing the picture of the Google account');
+  await expect(page.locator('#avatarBtn')).toHaveClass(/has-image/);
+  expect(await page.evaluate(() => window.lastInteractive)).toBe(true);
+  await expect.poll(() => page.evaluate(async () => (await chrome.storage.local.get('googleProfile')).googleProfile?.picture))
+    .toBe('https://lh3.googleusercontent.com/a/fixture=s96-c');
+  expect(await page.evaluate(async () => (await chrome.storage.sync.get(null)).googleProfile)).toBeUndefined();
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(page.locator('#googleAvatarState')).toContainText('Off');
+  await expect(page.locator('#avatarBtn .icon-account_circle')).toBeVisible();
+  expect(await page.evaluate(() => window.removedTokens)).toEqual(['fixture-grant']);
+  expect(await page.evaluate(async () => (await chrome.storage.local.get('googleProfile')).googleProfile)).toBeUndefined();
+});
+
 test('Scour cache is bound to the selected profile', async ({ page, worker, extensionId }) => {
   await openNewTab(page, extensionId);
   await expect(page.locator('#scourList .research-card')).toHaveCount(10);

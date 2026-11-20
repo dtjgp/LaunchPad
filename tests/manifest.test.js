@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+const LaunchPadCore = require('../core.js');
 
 test('manifest uses standard-size renders of the owner-selected illustration', () => {
   const crypto = require('node:crypto');
@@ -49,6 +50,13 @@ test('manifest grants only the feed hosts used by the background worker', () => 
   assert.equal(manifest.host_permissions.includes('https://www.google.com/*'), false);
   // Shortcut icons use Chrome's local favicon cache instead of a remote icon service.
   assert.deepEqual(manifest.permissions, ['storage', 'favicon']);
+});
+
+test('the Google account picture is opt-in and ships without a real OAuth client', () => {
+  assert.deepEqual(manifest.optional_permissions, ['identity']);
+  assert.deepEqual(manifest.oauth2.scopes, ['https://www.googleapis.com/auth/userinfo.profile']);
+  assert.ok(manifest.optional_host_permissions.includes('https://*/*'));
+  assert.equal(LaunchPadCore.isOAuthClientConfigured(manifest), false);
 });
 
 test('new tab replaces the editorial panel with Academic GitHub Trend', () => {
