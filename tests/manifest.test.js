@@ -52,11 +52,12 @@ test('manifest grants only the feed hosts used by the background worker', () => 
   assert.deepEqual(manifest.permissions, ['storage', 'favicon']);
 });
 
-test('the Google account picture is opt-in and ships without a real OAuth client', () => {
+test('the Google account picture is opt-in and its OAuth client matches the pinned extension ID', () => {
   assert.deepEqual(manifest.optional_permissions, ['identity']);
   assert.deepEqual(manifest.oauth2.scopes, ['https://www.googleapis.com/auth/userinfo.profile']);
   assert.ok(manifest.optional_host_permissions.includes('https://*/*'));
-  assert.equal(LaunchPadCore.isOAuthClientConfigured(manifest), false);
+  assert.equal(LaunchPadCore.isOAuthClientConfigured(manifest), true);
+  assert.ok(manifest.key, 'a stable key is required because the OAuth client is bound to the extension ID');
 });
 
 test('new tab replaces the editorial panel with Academic GitHub Trend', () => {
