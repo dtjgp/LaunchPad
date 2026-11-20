@@ -191,7 +191,7 @@
         <div class="panel-header">
           <div>
             <div class="panel-title">Academic GitHub Trend</div>
-            <div class="panel-subtitle">7d trend · 180d research fallback</div>
+            <div id="trendSubtitle" class="panel-subtitle">Active 180d · research-profile ranking</div>
           </div>
           <div class="panel-header-actions">
             <span id="trendUpdated" class="panel-updated"></span>
@@ -204,6 +204,16 @@
               </svg>
             </a>
           </div>
+        </div>
+        <div class="source-switch-row">
+          <div id="trendWindowSwitch" class="source-switch" role="group" aria-label="Trend window">
+            <button type="button" class="source-switch-btn active" data-window="active180" aria-pressed="true" title="Research repositories pushed in the last 180 days">Active</button>
+            <button type="button" class="source-switch-btn" data-window="new90" aria-pressed="false" title="Research repositories created in the last 90 days">New 90d</button>
+            <button type="button" class="source-switch-btn" data-window="new30" aria-pressed="false" title="Research repositories created in the last 30 days">New 30d</button>
+          </div>
+          <select id="trendAreaFilter" class="trend-area-filter" aria-label="Research area">
+            <option value="">All areas</option>
+          </select>
         </div>
         <div id="favoriteStatus" role="status" aria-live="polite" class="panel-status">Loading...</div>
         <div id="favoriteList" class="panel-list" role="list"></div>

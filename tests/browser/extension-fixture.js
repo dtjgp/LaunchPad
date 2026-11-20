@@ -81,7 +81,19 @@ const test = base.extend({
             primary_language: 'Python', stars: 120 + index, total_score: 30 + index
           })) } }));
         }
-        if (url.hostname === 'api.github.com') return new Response('{"items":[],"incomplete_results":false}');
+        if (url.hostname === 'api.github.com') {
+          const query = url.searchParams.get('q') || '';
+          if (!query.includes('created:>=')) return new Response('{"items":[],"incomplete_results":false}');
+          const area = query.includes('topic:') ? query.match(/topic:([\w-]+)/)?.[1] || 'area' : 'area';
+          return new Response(JSON.stringify({ incomplete_results: false, items: [{
+            full_name: `fixture-new/${area}`,
+            html_url: `https://github.com/fixture-new/${area}`,
+            description: '[Test fixture] New energy forecasting repository for smart grid research.',
+            language: 'Python', stargazers_count: 42, forks_count: 3, topics: ['energy-forecasting', 'smart-grid'],
+            created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+            pushed_at: new Date().toISOString(), license: { spdx_id: 'MIT' }
+          }] }));
+        }
         if (url.hostname === 'www.google.com' && url.pathname === '/complete/search') {
           const query = url.searchParams.get('q');
           return new Response(JSON.stringify([query,

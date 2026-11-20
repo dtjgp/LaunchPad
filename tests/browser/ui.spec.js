@@ -215,6 +215,52 @@ test('an empty arXiv update keeps cached papers instead of clearing the panel', 
   await expect(page.locator('#arxivList .research-card')).toHaveCount(count);
 });
 
+test('trend window switch loads newly created repositories and the area filter narrows them', async ({ page, worker, extensionId }) => {
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#favoriteStatus')).toContainText('Active 180d');
+  await expect(page.locator('#favoriteList .research-card')).toHaveCount(10);
+  await page.locator('#trendWindowSwitch [data-window="new30"]').click();
+  await expect(page.locator('#trendWindowSwitch [data-window="new30"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#trendSubtitle')).toContainText('New 30d');
+  await expect(page.locator('#favoriteStatus')).toContainText('New 30d');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('fixture-new/');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('created 5d ago');
+  await page.locator('#trendAreaFilter').selectOption('Energy Systems');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('Energy');
+  await page.locator('#trendAreaFilter').selectOption('VLA & Research Agents');
+  await expect(page.locator('#favoriteList .feed-empty')).toContainText('No VLA & Research Agents projects in New 30d');
+  // Both preferences survive a reload and the Active window keeps its own cache.
+  await page.reload();
+  await expect(page.locator('#trendWindowSwitch [data-window="new30"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#trendAreaFilter')).toHaveValue('VLA & Research Agents');
+  await page.locator('#trendAreaFilter').selectOption('');
+  await page.locator('#trendWindowSwitch [data-window="active180"]').click();
+  await expect(page.locator('#favoriteStatus')).toContainText('Cached < 1h');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('fixture-lab/');
+});
+
+test('an OSS Insight upstream outage is reported separately and GitHub Search fills the list', async ({ page, worker, extensionId }) => {
+  await worker.evaluate(() => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input.url);
+      if (url.hostname === 'api.ossinsight.io') {
+        return new Response(JSON.stringify({ data: { rows: [] }, data_quality: { status: 'unavailable', unavailable_since: '2026-03-01' } }));
+      }
+      if (url.hostname === 'api.github.com') {
+        const created = new URL(url);
+        created.searchParams.set('q', `${url.searchParams.get('q')} created:>=2026-01-01`);
+        return original(created.toString(), init);
+      }
+      return original(input, init);
+    };
+  });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#favoriteStatus')).toContainText('OSS Insight ranking paused upstream');
+  await expect(page.locator('#favoriteStatus')).toContainText('complete coverage');
+  await expect(page.locator('#favoriteList .research-card').first()).toContainText('fixture-new/');
+});
+
 test('panel refresh buttons bypass fresh caches and show when each panel was updated', async ({ page, worker, extensionId }) => {
   await openNewTab(page, extensionId);
   await expect(page.locator('#arxivUpdated')).toHaveText('Updated just now');

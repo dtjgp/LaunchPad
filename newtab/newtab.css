@@ -657,6 +657,18 @@ button.research-card-action {
   color: var(--blue);
 }
 
+.trend-area-filter {
+  min-height: 28px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
 .source-filter-toggle {
   min-height: 28px;
   padding: 4px 10px;

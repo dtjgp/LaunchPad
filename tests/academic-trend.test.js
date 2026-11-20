@@ -7,7 +7,9 @@ const {
   isFreshTrendCache,
   mergeAndRankRepositories,
   normalizeGithubSearch,
-  normalizeOssInsight
+  normalizeOssInsight,
+  getTrendWindow,
+  readOssInsightUnavailable
 } = require('../academic-trend.js');
 
 const NOW = Date.parse('2026-08-12T12:00:00Z');
@@ -255,6 +257,39 @@ test('builds five bounded official GitHub Search fallback requests', () => {
     assert.match(url.searchParams.get('q'), /pushed:>=2026-02-13/);
     assert.equal(url.searchParams.get('per_page'), '8');
   }
+});
+
+test('new-repository windows search by creation date and unknown windows fall back', () => {
+  const recent = buildGithubSearchRequests(NOW, 'new30');
+  assert.equal(recent.length, 5);
+  for (const request of recent) {
+    const query = new URL(request.url).searchParams.get('q');
+    assert.match(query, /created:>=2026-07-13/);
+    assert.doesNotMatch(query, /pushed:/);
+  }
+  assert.match(new URL(buildGithubSearchRequests(NOW, 'new90')[0].url).searchParams.get('q'), /created:>=2026-05-14/);
+  assert.equal(getTrendWindow('bogus').id, 'active180');
+  assert.equal(getTrendWindow('new90').useOssInsight, false);
+});
+
+test('detects the OSS Insight upstream outage separately from an empty trend', () => {
+  assert.deepEqual(
+    readOssInsightUnavailable({
+      data: { rows: [] },
+      data_quality: { status: 'unavailable', unavailable_since: '2026-03-01', reason: 'event capture paused' }
+    }),
+    { since: '2026-03-01', reason: 'event capture paused' }
+  );
+  assert.equal(readOssInsightUnavailable({ data: { rows: [] } }), null);
+  assert.equal(readOssInsightUnavailable(null), null);
+});
+
+test('ranking keeps the earliest repository creation date across sources', () => {
+  const [item] = mergeAndRankRepositories([
+    { title: 'lab/quant', desc: 'LLM quantization', created: '2026-07-01T00:00:00Z', source: 'github-search', topics: ['quantization'] },
+    { title: 'lab/quant', desc: 'LLM quantization', created: '2026-06-01T00:00:00Z', source: 'github-search', topics: ['quantization'] }
+  ], { now: NOW });
+  assert.equal(item.created, '2026-06-01T00:00:00Z');
 });
 
 test('trend cache expires after one hour and rejects malformed data', () => {

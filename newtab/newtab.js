@@ -108,6 +108,13 @@ let hfApplyFilter = readLocalJson(HF_FILTER_PREF_KEY) === true;
 let hfIndex = new Map();
 let hfRequestVersion = 0;
 const arxivSourceStatus = { latest: null, hf: null, saved: null };
+const TREND_WINDOW_PREF_KEY = 'pref_trend_window';
+const TREND_AREA_PREF_KEY = 'pref_trend_area';
+const TREND_DISPLAY_LIMIT = 10;
+let trendWindowId = AcademicTrend.getTrendWindow(readLocalJson(TREND_WINDOW_PREF_KEY)).id;
+let trendArea = typeof readLocalJson(TREND_AREA_PREF_KEY) === 'string' ? readLocalJson(TREND_AREA_PREF_KEY) : '';
+let trendItems = [];
+let trendRequestVersion = 0;
 // Read-later papers stay in chrome.storage.local on this device only.
 const READING_LIST_KEY = 'readingList';
 const MAX_READING_LIST = 200;
@@ -974,11 +981,11 @@ function sanitizeCachedFeed(items) {
   return items.filter(item => item && typeof item.title === 'string' && LaunchPadCore.normalizeHttpUrl(item.link))
     .map(item => {
       const safe = { ...item, link: LaunchPadCore.normalizeHttpUrl(item.link) };
-      for (const key of ['description', 'desc', 'pubDate', 'category', 'time', 'reason', 'language', 'license', 'sourceLabel', 'authors', 'announceType']) {
+      for (const key of ['description', 'desc', 'pubDate', 'category', 'time', 'reason', 'language', 'license', 'sourceLabel', 'authors', 'announceType', 'created', 'updated']) {
         safe[key] = typeof item[key] === 'string' ? item[key] : '';
       }
-      for (const key of ['tags', 'sources']) safe[key] = Array.isArray(item[key]) ? item[key].filter(value => typeof value === 'string') : [];
-      for (const key of ['stars', 'score', 'upvotes']) safe[key] = typeof item[key] === 'number' && Number.isFinite(item[key]) ? item[key] : 0;
+      for (const key of ['tags', 'sources', 'areas']) safe[key] = Array.isArray(item[key]) ? item[key].filter(value => typeof value === 'string') : [];
+      for (const key of ['stars', 'score', 'upvotes', 'forks']) safe[key] = typeof item[key] === 'number' && Number.isFinite(item[key]) ? item[key] : 0;
       return safe;
     });
 }
@@ -1594,25 +1601,89 @@ function academicTrendSourceLabel(items) {
 
 function formatAcademicTrendStatus(cache, prefix = '') {
   const source = academicTrendSourceLabel(cache.items || []);
-  const sources = new Set((cache.items || []).flatMap(item => item.sources || []));
-  const window = sources.has('ossinsight') && sources.has('github-search')
-    ? '7d trend + 180d fallback'
-    : sources.has('ossinsight')
-      ? '7d trend'
-      : cache.coverage?.primary === 'complete'
-        ? '180d fallback · OSS Insight scanned'
-        : '180d active-repo fallback';
-  const state = cache.coverage?.state === 'partial' ? 'partial coverage' : 'complete coverage';
-  const message = `${source} · ${window} · ${state} · ${cache.items.length} projects`;
+  const trendWindow = AcademicTrend.getTrendWindow(cache.coverage?.trendWindow);
+  const parts = [source, trendWindow.label];
+  if (cache.coverage?.primary === 'unavailable') parts.push('OSS Insight ranking paused upstream');
+  parts.push(cache.coverage?.state === 'partial' ? 'partial coverage' : 'complete coverage');
+  parts.push(`${cache.items.length} projects`);
+  const message = parts.join(' · ');
   return prefix ? `${prefix} · ${message}` : message;
+}
+
+function trendCacheKey(windowId) {
+  return windowId === AcademicTrend.DEFAULT_TREND_WINDOW
+    ? CACHE_KEYS.academicTrend
+    : `${CACHE_KEYS.academicTrend}_${windowId}`;
+}
+
+function readTrendCache(windowId) {
+  const stored = readLocalJson(trendCacheKey(windowId));
+  if (!stored) return null;
+  const storedWindow = stored.coverage?.trendWindow || AcademicTrend.DEFAULT_TREND_WINDOW;
+  if (storedWindow !== windowId) return null;
+  return {
+    ...stored,
+    coverage: { ...(stored.coverage || {}), trendWindow: windowId },
+    items: sanitizeCachedFeed(stored.items)
+  };
+}
+
+function renderTrendControls() {
+  const trendWindow = AcademicTrend.getTrendWindow(trendWindowId);
+  document.querySelectorAll('#trendWindowSwitch [data-window]').forEach(button => {
+    const active = button.dataset.window === trendWindow.id;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  const subtitle = document.getElementById('trendSubtitle');
+  if (subtitle) {
+    subtitle.textContent = trendWindow.useOssInsight
+      ? `${trendWindow.label} · research-profile ranking`
+      : `${trendWindow.label} · newly created research repos`;
+  }
+  const select = document.getElementById('trendAreaFilter');
+  if (select) {
+    if (select.options.length <= 1) {
+      AcademicTrend.PROFILE_AREAS.forEach(area => {
+        const option = document.createElement('option');
+        option.value = area.label;
+        option.textContent = area.label;
+        select.appendChild(option);
+      });
+    }
+    if (!AcademicTrend.PROFILE_AREAS.some(area => area.label === trendArea)) trendArea = '';
+    select.value = trendArea;
+  }
+}
+
+function selectTrendWindow(windowId) {
+  const next = AcademicTrend.getTrendWindow(windowId).id;
+  if (next === trendWindowId) return;
+  trendWindowId = next;
+  writeLocalJson(TREND_WINDOW_PREF_KEY, next);
+  renderTrendControls();
+  void loadAcademicTrend();
+}
+
+function selectTrendArea(area) {
+  trendArea = AcademicTrend.PROFILE_AREAS.some(item => item.label === area) ? area : '';
+  writeLocalJson(TREND_AREA_PREF_KEY, trendArea);
+  renderTrendControls();
+  renderAcademicTrendItems(trendItems);
 }
 
 async function loadAcademicTrend({ force = false } = {}) {
   if (!favoriteList || !favoriteStatus) return;
-  const storedCache = readLocalJson(CACHE_KEYS.academicTrend);
-  const cached = storedCache ? { ...storedCache, items: sanitizeCachedFeed(storedCache.items) } : null;
+  const requestVersion = ++trendRequestVersion;
+  const windowId = trendWindowId;
+  const trendWindow = AcademicTrend.getTrendWindow(windowId);
+  const isCurrent = () => requestVersion === trendRequestVersion;
+  renderTrendControls();
+  const cached = readTrendCache(windowId);
   const cachedItems = Array.isArray(cached?.items) ? cached.items : [];
+  panelUpdatedAt.trend = 0;
   if (cachedItems.length) markPanelUpdated('trend', cached.fetchedAt);
+  else renderPanelUpdated();
   if (!force && AcademicTrend.isFreshTrendCache(cached)) {
     favoriteStatus.textContent = formatAcademicTrendStatus(cached, 'Cached < 1h');
     renderAcademicTrendItems(cached.items);
@@ -1623,27 +1694,39 @@ async function loadAcademicTrend({ force = false } = {}) {
     renderAcademicTrendItems(cachedItems);
   } else {
     favoriteStatus.textContent = 'Loading research-profile trends...';
+    trendItems = [];
     renderSkeleton(favoriteList, 4);
   }
 
   try {
     let primaryItems = [];
-    let primaryOk = false;
-    try {
-      const payload = await fetchAcademicJson('fetchAcademicTrend', ACADEMIC_TREND_URL);
-      if (!Array.isArray(payload?.data?.rows)) throw new Error('Invalid OSS Insight response');
-      primaryItems = AcademicTrend.normalizeOssInsight(payload);
-      primaryOk = true;
-    } catch (error) {
-      void logEvent('warn', 'academic trend primary source failed', { message: error.message });
+    let primaryState = 'not-used';
+    if (trendWindow.useOssInsight) {
+      try {
+        const payload = await fetchAcademicJson('fetchAcademicTrend', ACADEMIC_TREND_URL);
+        if (!Array.isArray(payload?.data?.rows)) throw new Error('Invalid OSS Insight response');
+        const unavailable = AcademicTrend.readOssInsightUnavailable(payload);
+        if (unavailable) {
+          primaryState = 'unavailable';
+          void logEvent('warn', 'academic trend primary source unavailable', unavailable);
+        } else {
+          primaryItems = AcademicTrend.normalizeOssInsight(payload);
+          primaryState = 'complete';
+        }
+      } catch (error) {
+        primaryState = 'failed';
+        void logEvent('warn', 'academic trend primary source failed', { message: error.message });
+      }
     }
 
-    const primaryRanked = AcademicTrend.mergeAndRankRepositories(primaryItems, { limit: 10 });
-    const needsFallback = primaryRanked.length < 10;
+    const primaryRanked = AcademicTrend.mergeAndRankRepositories(primaryItems, { limit: TREND_DISPLAY_LIMIT });
+    const needsFallback = primaryRanked.length < TREND_DISPLAY_LIMIT;
     let fallbackItems = [];
     let fallbackFulfilled = 0;
     let fallbackIncomplete = false;
-    const fallbackRequests = needsFallback ? AcademicTrend.buildGithubSearchRequests() : [];
+    const fallbackRequests = needsFallback
+      ? AcademicTrend.buildGithubSearchRequests(Date.now(), windowId)
+      : [];
 
     if (needsFallback) {
       const results = await Promise.allSettled(fallbackRequests.map(async request => {
@@ -1658,18 +1741,21 @@ async function loadAcademicTrend({ force = false } = {}) {
         fallbackItems = [...fallbackItems, ...result.value.items];
       }
     }
+    if (!isCurrent()) return;
 
+    // Keep a wider ranked pool so the area filter still has candidates.
     const items = AcademicTrend.mergeAndRankRepositories(
       [...primaryItems, ...fallbackItems],
-      { limit: 10 }
+      { limit: 30 }
     );
+    const primaryUsable = primaryState === 'complete' || primaryState === 'unavailable';
     if (items.length === 0) {
-      if (primaryOk || fallbackFulfilled > 0) {
+      if (primaryState === 'complete' || fallbackFulfilled > 0) {
         if (cachedItems.length) {
           favoriteStatus.textContent = formatAcademicTrendStatus(cached, 'Cached · no new matches returned');
         } else {
-          favoriteStatus.textContent = 'No matching projects returned by the available sources.';
-          renderFeedEmpty(favoriteList, 'Try refreshing later, or browse the source directly.');
+          favoriteStatus.textContent = `No matching projects returned for ${trendWindow.label}.`;
+          renderFeedEmpty(favoriteList, 'Try another window, refresh later, or browse the source directly.');
         }
         return;
       }
@@ -1678,36 +1764,54 @@ async function loadAcademicTrend({ force = false } = {}) {
 
     const fallbackComplete = !needsFallback ||
       (fallbackFulfilled === fallbackRequests.length && !fallbackIncomplete);
+    const primaryComplete = !trendWindow.useOssInsight || primaryUsable;
     const coverage = {
-      state: primaryOk && fallbackComplete ? 'complete' : 'partial',
-      primary: primaryOk ? 'complete' : 'failed',
+      state: primaryComplete && fallbackComplete ? 'complete' : 'partial',
+      primary: primaryState,
       githubSearch: needsFallback
         ? `${fallbackFulfilled}/${fallbackRequests.length}`
         : 'not-needed',
       incompleteResults: fallbackIncomplete,
       primaryAcademicMatches: primaryRanked.length,
       fallbackCandidates: fallbackItems.length,
-      window: 'past_week'
+      trendWindow: windowId
     };
     const trendCache = AcademicTrend.createTrendCache(items, coverage);
-    writeLocalJson(CACHE_KEYS.academicTrend, trendCache);
+    writeLocalJson(trendCacheKey(windowId), trendCache);
     markPanelUpdated('trend', trendCache.fetchedAt);
     favoriteStatus.textContent = formatAcademicTrendStatus(trendCache, 'Updated now');
     renderAcademicTrendItems(items);
   } catch (error) {
+    if (!isCurrent()) return;
     void logEvent('error', 'academic trend refresh failed', { message: error.message });
     if (!cachedItems.length) {
       renderFeedEmpty(favoriteList, 'The trend sources are unavailable. Try refreshing again.');
-      setStatusWithRetry(favoriteStatus, 'Failed to load Academic GitHub Trend.', loadAcademicTrend);
+      setStatusWithRetry(favoriteStatus, 'Failed to load Academic GitHub Trend.', () => loadAcademicTrend({ force: true }));
     } else {
       favoriteStatus.textContent = formatAcademicTrendStatus(cached, 'Cached fallback · refresh failed');
     }
   }
 }
 
+function formatTrendAge(value) {
+  const time = Date.parse(value || '');
+  if (!Number.isFinite(time)) return '';
+  const days = Math.max(0, Math.floor((Date.now() - time) / 86400000));
+  return days === 0 ? 'today' : `${days}d ago`;
+}
+
 function renderAcademicTrendItems(items) {
+  trendItems = Array.isArray(items) ? items : [];
+  const trendWindow = AcademicTrend.getTrendWindow(trendWindowId);
+  const visible = trendItems
+    .filter(item => !trendArea || (Array.isArray(item.areas) && item.areas.includes(trendArea)))
+    .slice(0, TREND_DISPLAY_LIMIT);
   favoriteList.innerHTML = '';
-  items.forEach((item, index) => {
+  if (trendItems.length && !visible.length) {
+    renderFeedEmpty(favoriteList, `No ${trendArea} projects in ${trendWindow.label}. Choose All areas or another window.`);
+    return;
+  }
+  visible.forEach(item => {
     const safeUrl = LaunchPadCore.normalizeHttpUrl(item.link);
     if (!safeUrl) return;
     const el = document.createElement('a');
@@ -1716,7 +1820,6 @@ function renderAcademicTrendItems(items) {
     el.target = '_blank';
     el.rel = 'noopener';
     el.role = 'listitem';
-    el.style.setProperty('--item-index', String(Math.min(index, 12)));
     const titleEl = document.createElement('div');
     titleEl.className = 'favorite-item-title research-card-title';
     titleEl.textContent = item.title;
@@ -1725,8 +1828,13 @@ function renderAcademicTrendItems(items) {
     descEl.textContent = item.desc;
     const metaEl = document.createElement('div');
     metaEl.className = 'favorite-item-meta research-card-meta';
+    const createdAge = trendWindow.useOssInsight ? '' : formatTrendAge(item.created);
+    const pushedAge = trendWindow.useOssInsight ? formatTrendAge(item.updated) : '';
     const metaParts = [
       `★ ${Number(item.stars || 0).toLocaleString()}`,
+      Number(item.forks) > 0 ? `⑂ ${Number(item.forks).toLocaleString()}` : '',
+      createdAge ? `created ${createdAge}` : '',
+      pushedAge ? `pushed ${pushedAge}` : '',
       `Score ${Number(item.score || 0).toFixed(1)}`,
       item.sourceLabel,
       item.language,
@@ -2631,6 +2739,13 @@ document.getElementById('scourPanelRefreshBtn')?.addEventListener('click', (even
 });
 document.getElementById('trendPanelRefreshBtn')?.addEventListener('click', (event) => {
   void runPanelRefresh(event.currentTarget, () => loadAcademicTrend({ force: true }));
+});
+document.getElementById('trendWindowSwitch')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-window]');
+  if (button) selectTrendWindow(button.dataset.window);
+});
+document.getElementById('trendAreaFilter')?.addEventListener('change', (event) => {
+  selectTrendArea(event.target.value);
 });
 setInterval(renderPanelUpdated, 60 * 1000);
 
