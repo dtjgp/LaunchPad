@@ -604,11 +604,18 @@ body.newtab-page {
   background: var(--blue-subtle);
 }
 
+.source-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .source-switch {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  margin-bottom: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -632,6 +639,32 @@ body.newtab-page {
 }
 
 .source-switch-btn.active {
+  background: var(--blue-subtle);
+  color: var(--blue);
+}
+
+.source-filter-toggle {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.source-filter-toggle[hidden] {
+  display: none;
+}
+
+.source-filter-toggle:hover {
+  color: var(--text);
+}
+
+.source-filter-toggle.active {
+  border-color: var(--blue);
   background: var(--blue-subtle);
   color: var(--blue);
 }

@@ -157,9 +157,16 @@ test('HF Hot asks for huggingface.co only, ranks by upvotes and annotates matchi
   expect(await page.evaluate(() => window.requestedHfOrigins)).toEqual(['https://huggingface.co/*']);
   await expect(page.getByRole('button', { name: 'HF Hot' })).toHaveAttribute('aria-pressed', 'true');
   const hfTitles = page.locator('#arxivList .research-card-link');
+  await expect(hfTitles).toHaveText(['[Test fixture] Structured pruning for edge AI', '[Test fixture] Edge AI community favourite', '[Test fixture] Video diffusion world model']);
+  const topicToggle = page.getByRole('button', { name: 'Only my topics' });
+  await expect(topicToggle).toHaveAttribute('aria-pressed', 'false');
+  await topicToggle.click();
+  await expect(topicToggle).toHaveAttribute('aria-pressed', 'true');
   await expect(hfTitles).toHaveText(['[Test fixture] Structured pruning for edge AI', '[Test fixture] Edge AI community favourite']);
+  await expect(page.locator('#arxivStatus')).toContainText('matches from 3 Hugging Face papers');
   await expect(page.locator('#arxivList .research-card').first().locator('.research-card-action')).toHaveText(['▲ 42 on HF', 'Code']);
   await page.getByRole('button', { name: 'Latest' }).click();
+  await expect(topicToggle).toBeHidden();
   const matched = page.locator('#arxivList .research-card.has-actions');
   await expect(matched).toHaveCount(1);
   await expect(matched.getByRole('link', { name: 'Code' })).toHaveAttribute('href', 'https://github.com/fixture-lab/pruning');

@@ -61,7 +61,9 @@ const test = base.extend({
             { title: '[Test fixture] Structured pruning for edge AI', upvotes: 42, paper: { id: fixtureArxivId('cs.AI', 0),
               title: '[Test fixture] Structured pruning for edge AI', summary: 'Test data matched to an arXiv card.',
               authors: [{ name: 'Ada Fixture' }], publishedAt: '2026-09-07T08:00:00Z', upvotes: 42,
-              githubRepo: 'https://github.com/fixture-lab/pruning' } }
+              githubRepo: 'https://github.com/fixture-lab/pruning' } },
+            { title: '[Test fixture] Video diffusion world model', upvotes: 7, paper: { id: '2609.99991', title: '[Test fixture] Video diffusion world model',
+              summary: 'Test data outside the default research filter.', authors: [{ name: 'Vera Fixture' }], publishedAt: '2026-09-07T08:00:00Z', upvotes: 7 } }
           ]));
         }
         if (url.hostname === 'scour.ing') {

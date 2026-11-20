@@ -102,6 +102,8 @@ let arxivRequestVersion = 0;
 // 'latest' shows the arXiv RSS announcement; 'hf' shows Hugging Face Daily Papers by upvotes.
 let arxivSource = 'latest';
 let hfItems = [];
+const HF_FILTER_PREF_KEY = 'pref_hf_apply_filter';
+let hfApplyFilter = readLocalJson(HF_FILTER_PREF_KEY) === true;
 let hfIndex = new Map();
 let hfRequestVersion = 0;
 const arxivSourceStatus = { latest: null, hf: null };
@@ -1121,7 +1123,7 @@ async function loadHfDaily() {
   if (hfVisible()) {
     if (hfItems.length) {
       const rendered = renderArxivItems({ keepStatus: true });
-      setArxivSourceStatus('hf', `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} Hugging Face papers · refreshing...`);
+      setArxivSourceStatus('hf', `Cached · ${describeHfCount(rendered)} · refreshing...`);
     } else {
       renderSkeleton(arxivList, 5);
       setArxivSourceStatus('hf', 'Loading Hugging Face Daily Papers...');
@@ -1142,7 +1144,7 @@ async function loadHfDaily() {
         return;
       }
       const rendered = renderArxivItems({ keepStatus: true });
-      setArxivSourceStatus('hf', `Updated just now · ${rendered.filteredCount} matches from ${rendered.totalCount} Hugging Face papers`);
+      setArxivSourceStatus('hf', `Updated just now · ${describeHfCount(rendered)}`);
     } else {
       arxivSourceStatus.hf = null;
       if (arxivItems.length) renderArxivItems({ keepStatus: true });
@@ -1169,6 +1171,20 @@ function renderArxivSourceSwitch() {
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
   });
+  const filterToggle = document.getElementById('hfFilterToggle');
+  if (filterToggle) {
+    filterToggle.hidden = arxivSource !== 'hf';
+    filterToggle.classList.toggle('active', hfApplyFilter);
+    filterToggle.setAttribute('aria-pressed', String(hfApplyFilter));
+  }
+}
+
+function setHfApplyFilter(value) {
+  if (hfApplyFilter === value) return;
+  hfApplyFilter = value;
+  writeLocalJson(HF_FILTER_PREF_KEY, value);
+  renderArxivSourceSwitch();
+  if (arxivSource === 'hf' && hfItems.length) renderArxivItems();
 }
 
 function showArxivSource(source) {
@@ -1204,7 +1220,7 @@ function selectArxivSource(source, { refresh = false } = {}) {
       void loadHfDaily();
     } else if (!arxivSourceStatus.hf) {
       const rendered = renderArxivItems({ keepStatus: true });
-      setArxivSourceStatus('hf', `Cached · ${rendered.filteredCount} matches from ${rendered.totalCount} Hugging Face papers`);
+      setArxivSourceStatus('hf', `Cached · ${describeHfCount(rendered)}`);
     }
   });
 }
@@ -1227,14 +1243,28 @@ function formatArxivDate(value) {
   }).format(timestamp);
 }
 
+function arxivFilterApplies() {
+  return arxivSource !== 'hf' || hfApplyFilter;
+}
+
+function describeHfCount(rendered) {
+  return arxivFilterApplies()
+    ? `${rendered.filteredCount} matches from ${rendered.totalCount} Hugging Face papers`
+    : `${rendered.totalCount} Hugging Face papers`;
+}
+
 function filterArxivSourceItems(items) {
+  if (!arxivFilterApplies()) return items.slice();
   return items.filter(item => FilterQuery.matchesFilterAst(
     lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)} ${item.authors || ''}`
   ));
 }
 
 function countArxivMatches(items) {
-  return { filteredCount: filterArxivSourceItems(items).length, totalCount: items.length };
+  const filtered = items.filter(item => FilterQuery.matchesFilterAst(
+    lastValidFilter.ast, `${item.title} ${getArxivSummary(item.description)} ${item.authors || ''}`
+  ));
+  return { filteredCount: filtered.length, totalCount: items.length };
 }
 
 function buildArxivCardActions(hfPaper) {
@@ -1253,8 +1283,8 @@ function renderArxivItems({ keepStatus = false } = {}) {
   error.textContent = parsed.ok ? '' : `Filter not applied. ${parsed.error} Showing the last valid results.`;
   arxivFilterInput?.setAttribute('aria-invalid', parsed.ok ? 'false' : 'true');
   if (parsed.ok) lastValidFilter = { query: arxivFilter.trim(), mode: arxivFilterModeValue, ast: parsed.ast };
-  const trimmed = lastValidFilter.query;
   const hfMode = arxivSource === 'hf';
+  const trimmed = arxivFilterApplies() ? lastValidFilter.query : '';
   const sourceItems = hfMode ? hfItems : arxivItems;
   const sourceLabel = hfMode ? 'Hugging Face papers' : 'papers';
   const filtered = filterArxivSourceItems(sourceItems);
@@ -2428,6 +2458,8 @@ document.getElementById('arxivSourceSwitch')?.addEventListener('click', (event) 
   selectArxivSource(button.dataset.source);
 });
 
+document.getElementById('hfFilterToggle')?.addEventListener('click', () => setHfApplyFilter(!hfApplyFilter));
+
 arxivChips.forEach(chip => {
   chip.addEventListener('click', () => {
     const category = chip.dataset.category;
@@ -2452,6 +2484,7 @@ if (arxivFilterInput) {
   let filterSaveTimer = null;
   arxivFilterInput.addEventListener('input', () => {
     arxivFilter = arxivFilterInput.value;
+    if (arxivSource === 'hf') setHfApplyFilter(true);
     updateArxivResearchContext();
     renderArxivItems();
     clearTimeout(filterSaveTimer);
@@ -2494,6 +2527,7 @@ if (arxivResearchTracks) {
   arxivResearchTracks.addEventListener('click', (event) => {
     const button = event.target.closest('.research-track');
     if (!button) return;
+    if (arxivSource === 'hf') setHfApplyFilter(true);
     applyArxivResearchPreset(button.dataset.trackId);
   });
 
