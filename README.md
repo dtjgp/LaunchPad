@@ -34,7 +34,7 @@ The research tracks cover Edge AI/model compression, communication systems, ener
 | Show/hide research panels | arXiv / Trend controls at the top |
 | Configure sources and appearance | Settings |
 
-The account button opens configurable links to Google account pages. In Settings, **Use Google account picture** (off by default) shows the picture of the Google account signed in to Chrome; it requests the optional `identity` permission and `www.googleapis.com` access, reads only the `userinfo.profile` picture, keeps the image URL on this device and refreshes it every 6 hours or with **Refresh picture**. **Disconnect** removes the token, the saved picture and both permissions. An optional HTTPS custom avatar is used when the Google picture is off or unavailable.
+The account button opens configurable links to Google account pages. In Settings, **Use Google account picture** (off by default) shows the picture of the Google account signed in to Chrome; it requests the optional `identity` permission and `www.googleapis.com` access, reads only the `userinfo.profile` picture, keeps the image URL on this device and re-checks it silently each time a new tab opens or becomes visible again (at most once a minute), when the Chrome sign-in changes, or with **Refresh picture**. **Disconnect** removes the token, the saved picture and both permissions. An optional HTTPS custom avatar is used when the Google picture is off or unavailable.
 
 #### Enable the Google account picture in your build
 

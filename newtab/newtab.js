@@ -439,6 +439,10 @@ async function init() {
   applyTheme();
   applyAvatar();
   void syncGoogleAvatar();
+  // Re-check when the tab is shown again so a changed Google picture follows quickly.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && ['connected', 'stale'].includes(googleAvatarState)) void syncGoogleAvatar();
+  });
   render();
   renderMenus();
   applyArxivControls();
@@ -791,7 +795,8 @@ async function syncGoogleAvatar({ interactive = false, force = false } = {}) {
     setGoogleAvatarState('connected');
     return;
   }
-  setGoogleAvatarState('loading');
+  // With a saved picture shown, revalidate quietly instead of flashing a loading state.
+  setGoogleAvatarState(cached && !interactive ? 'connected' : 'loading');
   try {
     const picture = await fetchGoogleProfilePicture(interactive);
     if (requestVersion !== googleAvatarRequestVersion) return;

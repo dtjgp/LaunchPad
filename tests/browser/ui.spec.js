@@ -627,6 +627,32 @@ test('the Google account picture is opt-in, replaces the fallback icon and is re
   expect(await page.evaluate(async () => (await chrome.storage.local.get('googleProfile')).googleProfile)).toBeUndefined();
 });
 
+test('a changed Google account picture replaces the saved one on the next new tab without prompting', async ({ page, context, worker, extensionId }) => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await context.route(/^https:\/\/lh3\.googleusercontent\.com\//, route => route.fulfill({ contentType: 'image/png', body: png }));
+  await worker.evaluate(() => chrome.storage.local.set({ googleProfile: { picture: 'https://lh3.googleusercontent.com/a/old=s96-c', fetchedAt: Date.now() - 5 * 60 * 1000 } }));
+  await page.addInitScript(() => {
+    const manifest = chrome.runtime.getManifest();
+    chrome.runtime.getManifest = () => ({ ...manifest, oauth2: { ...manifest.oauth2, client_id: '123-test.apps.googleusercontent.com' } });
+    const containsOriginal = chrome.permissions.contains.bind(chrome.permissions);
+    chrome.permissions.contains = async request => request.permissions?.includes('identity') ? true : containsOriginal(request);
+    chrome.identity = {
+      getAuthToken: async ({ interactive }) => { window.lastInteractive = interactive; const value = ['fixture', 'grant'].join('-'); return { token: value }; },
+      removeCachedAuthToken: async () => {},
+      onSignInChanged: { addListener() {} }
+    };
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (url, init) => String(url).startsWith('https://www.googleapis.com/oauth2/v3/userinfo')
+      ? new Response(JSON.stringify({ sub: '1', picture: 'https://lh3.googleusercontent.com/a/new=s96-c' }), { headers: { 'content-type': 'application/json' } })
+      : originalFetch(url, init);
+  });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#avatarBtn')).toHaveAttribute('style', /a\/new=s96-c/);
+  expect(await page.evaluate(() => window.lastInteractive)).toBe(false);
+  await expect.poll(() => page.evaluate(async () => (await chrome.storage.local.get('googleProfile')).googleProfile?.picture))
+    .toBe('https://lh3.googleusercontent.com/a/new=s96-c');
+});
+
 test('Scour cache is bound to the selected profile', async ({ page, worker, extensionId }) => {
   await openNewTab(page, extensionId);
   await expect(page.locator('#scourList .research-card')).toHaveCount(10);

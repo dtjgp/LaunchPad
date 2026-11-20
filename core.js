@@ -182,7 +182,7 @@
   // Optional Google account picture: Chrome's OAuth flow with the profile scope only.
   const GOOGLE_PROFILE_ORIGIN = 'https://www.googleapis.com/*';
   const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
-  const GOOGLE_PROFILE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+  const GOOGLE_PROFILE_MAX_AGE_MS = 60 * 1000;
   const GOOGLE_PROFILE_STORAGE_KEY = 'googleProfile';
 
   function isOAuthClientConfigured(manifest) {
