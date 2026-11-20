@@ -265,6 +265,8 @@ test('panel refresh buttons bypass fresh caches and show when each panel was upd
   await openNewTab(page, extensionId);
   await expect(page.locator('#arxivUpdated')).toHaveText('Updated just now');
   await expect(page.locator('#scourUpdated')).toHaveText('Updated just now');
+  await expect(page.locator('#scourList .research-card a[href="https://example.org/articles/0"]').first()).toBeAttached();
+  await expect(page.locator('#scourList .scour-tag').first()).toHaveText('Edge AI');
   await expect(page.locator('#trendUpdated')).toHaveText('Updated just now');
   await page.reload();
   await expect(page.locator('#trendList .research-card, #favoriteList .research-card').first()).toBeVisible();

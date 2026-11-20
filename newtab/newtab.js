@@ -2054,11 +2054,24 @@ function parseScourRss(text) {
       '';
     return {
       title,
-      link: normalizeScourUrl(link),
+      link: normalizeScourUrl(unwrapScourRedirect(normalizeScourUrl(link))),
       time,
-      tags: []
+      tags: Array.from(entry.querySelectorAll('category'))
+        .map(node => node.textContent?.trim() || node.getAttribute('term') || '')
+        .filter(Boolean)
+        .slice(0, 4)
     };
   }).filter(item => item.title && item.link);
+}
+
+// Scour feed links go through its /r/rss/<encoded url> redirect, which serves the browser check.
+function unwrapScourRedirect(href) {
+  try {
+    const url = new URL(href);
+    const match = /^\/r\/rss\/(.+)$/.exec(url.pathname);
+    if (/(^|\.)scour\.ing$/.test(url.hostname) && match) return decodeURIComponent(match[1]);
+  } catch {}
+  return href;
 }
 
 function parseScourHtml(text) {
@@ -2131,12 +2144,11 @@ function parseScourHtml(text) {
 }
 
 async function fetchScourItems(sourceUrl) {
+  // Scour's documented feeds (scour.ing/docs/export) are served without the browser check.
   const urls = [
-    sourceUrl,
-    `${sourceUrl}.rss`,
-    `${sourceUrl}/rss`,
-    `${sourceUrl}.xml`,
-    `${sourceUrl}/feed`
+    `${sourceUrl}/rss.xml`,
+    `${sourceUrl}/atom.xml`,
+    sourceUrl
   ];
   let successfulSources = 0;
   let browserChecks = 0;

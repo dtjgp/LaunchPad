@@ -68,6 +68,13 @@ const test = base.extend({
               summary: 'Test data outside the default research filter.', authors: [{ name: 'Vera Fixture' }], publishedAt: '2026-09-07T08:00:00Z', upvotes: 7 } }
           ]));
         }
+        if (url.hostname === 'scour.ing' && url.pathname.endsWith('/rss.xml')) {
+          return new Response(`<?xml version="1.0"?><rss version="2.0"><channel>${Array.from({ length: 12 }, (_, index) => `<item>
+            <title>[Test fixture] Research reading list ${index + 1}</title>
+            <link>https://scour.ing/r/rss/${encodeURIComponent(`https://example.org/articles/${index}`)}</link>
+            <category>Edge AI</category><pubDate>Mon, 07 Sep 2026 08:00:00 GMT</pubDate>
+          </item>`).join('')}</channel></rss>`);
+        }
         if (url.hostname === 'scour.ing') {
           return new Response(Array.from({ length: 12 }, (_, index) => `<article data-item="post" data-post-title="[Test fixture] Research reading list ${index + 1}">
             <div class="post-title-block"><a data-track-click href="https://example.org/articles/${index}">Read article</a></div>
