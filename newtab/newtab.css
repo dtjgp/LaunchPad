@@ -604,6 +604,20 @@ body.newtab-page {
   background: var(--blue-subtle);
 }
 
+button.research-card-action {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.research-card-action.active {
+  border-color: var(--blue);
+  background: var(--blue-subtle);
+}
+
+.research-card-action.error {
+  color: var(--danger);
+}
+
 .source-switch-row {
   display: flex;
   flex-wrap: wrap;

@@ -152,6 +152,25 @@
     return match ? match[1] : '';
   }
 
+  function buildArxivBibtex(item) {
+    const arxivId = extractArxivId(item?.link);
+    if (!arxivId) return '';
+    // Braces and backslashes would unbalance the entry.
+    const clean = value => String(value || '').replace(/[{}\\]/g, '').replace(/\s+/g, ' ').trim();
+    const authors = clean(item.authors).split(/\s*,\s*/).filter(Boolean);
+    const year = new Date(Date.parse(item.pubDate || '')).getUTCFullYear();
+    const fields = [
+      ['title', `{${clean(item.title)}}`],
+      authors.length ? ['author', `{${authors.join(' and ')}}`] : null,
+      Number.isFinite(year) ? ['year', `{${year}}`] : null,
+      ['eprint', `{${arxivId}}`],
+      ['archivePrefix', '{arXiv}'],
+      /^[a-z-]+(\.[A-Z]{2})?$/i.test(item.category || '') ? ['primaryClass', `{${item.category}}`] : null,
+      ['url', `{https://arxiv.org/abs/${arxivId}}`]
+    ].filter(Boolean);
+    return `@misc{arxiv${arxivId.replace('.', '_')},\n${fields.map(([key, value]) => `  ${key} = ${value}`).join(',\n')}\n}`;
+  }
+
   function normalizeGithubRepo(value) {
     const match = String(value || '').trim().match(GITHUB_REPO_PATTERN);
     return match ? `https://github.com/${match[1]}/${match[2]}` : '';
@@ -207,6 +226,7 @@
 
   return {
     ARXIV_RESEARCH_TRACKS,
+    buildArxivBibtex,
     buildArxivResearchPreset,
     buildHfPaperIndex,
     extractArxivId,

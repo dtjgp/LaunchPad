@@ -152,7 +152,7 @@ test('HF Hot asks for huggingface.co only, ranks by upvotes and annotates matchi
   await worker.evaluate(() => { chrome.permissions.contains = async () => true; });
   await openNewTab(page, extensionId);
   await expect(page.locator('#arxivStatus')).toContainText('Updated');
-  await expect(page.locator('#arxivList .research-card-action')).toHaveCount(0);
+  await expect(page.locator('#arxivList .research-card-action', { hasText: 'on HF' })).toHaveCount(0);
   await page.getByRole('button', { name: 'HF Hot' }).click();
   expect(await page.evaluate(() => window.requestedHfOrigins)).toEqual(['https://huggingface.co/*']);
   await expect(page.getByRole('button', { name: 'HF Hot' })).toHaveAttribute('aria-pressed', 'true');
@@ -164,13 +164,42 @@ test('HF Hot asks for huggingface.co only, ranks by upvotes and annotates matchi
   await expect(topicToggle).toHaveAttribute('aria-pressed', 'true');
   await expect(hfTitles).toHaveText(['[Test fixture] Structured pruning for edge AI', '[Test fixture] Edge AI community favourite']);
   await expect(page.locator('#arxivStatus')).toContainText('matches from 3 Hugging Face papers');
-  await expect(page.locator('#arxivList .research-card').first().locator('.research-card-action')).toHaveText(['▲ 42 on HF', 'Code']);
+  await expect(page.locator('#arxivList .research-card').first().locator('.research-card-action')).toHaveText(['▲ 42 on HF', 'Code', 'PDF', 'BibTeX', 'Save']);
   await page.getByRole('button', { name: 'Latest' }).click();
   await expect(topicToggle).toBeHidden();
-  const matched = page.locator('#arxivList .research-card.has-actions');
+  const matched = page.locator('#arxivList .research-card', { has: page.getByRole('link', { name: /Hugging Face discussion/ }) });
   await expect(matched).toHaveCount(1);
   await expect(matched.getByRole('link', { name: 'Code' })).toHaveAttribute('href', 'https://github.com/fixture-lab/pruning');
   await expect(matched.locator('.research-card-link')).toHaveAttribute('href', /arxiv\.org\/abs\/2609\.1000/);
+});
+
+test('arXiv cards link the PDF, copy BibTeX and keep saved papers after reload', async ({ page, extensionId }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copiedText = text; } } });
+  });
+  await openNewTab(page, extensionId);
+  await expect(page.locator('#arxivStatus')).toContainText('Updated');
+  const card = page.locator('#arxivList .research-card').first();
+  const title = await card.locator('.research-card-link').textContent();
+  const absHref = await card.locator('.research-card-link').getAttribute('href');
+  const arxivId = absHref.match(/abs\/([^?#v]+)/)[1];
+  await expect(card.getByRole('link', { name: `PDF for arXiv ${arxivId}` })).toHaveAttribute('href', `https://arxiv.org/pdf/${arxivId}`);
+  await card.getByRole('button', { name: 'BibTeX' }).click();
+  await expect(card.getByRole('button', { name: 'Copied' })).toBeVisible();
+  const bibtex = await page.evaluate(() => window.copiedText);
+  expect(bibtex).toContain(`eprint = {${arxivId}}`);
+  expect(bibtex).toContain('archivePrefix = {arXiv}');
+  await card.getByRole('button', { name: 'Save' }).click();
+  await expect(card.getByRole('button', { name: 'Saved' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Saved 1' })).toBeVisible();
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Saved 1' }).click();
+  await expect(page.locator('#arxivSubtitle')).toHaveText('Read later · saved on this device');
+  await expect(page.locator('#arxivList .research-card-link')).toHaveText([title]);
+  await page.locator('#arxivList').getByRole('button', { name: 'Saved' }).click();
+  await expect(page.locator('#arxivList')).toContainText('Use Save on any paper');
+  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('an empty arXiv update keeps cached papers instead of clearing the panel', async ({ page, worker, extensionId }) => {

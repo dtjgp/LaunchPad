@@ -102,12 +102,17 @@ let arxivRequestVersion = 0;
 // 'latest' shows the arXiv RSS announcement; 'hf' shows Hugging Face Daily Papers by upvotes.
 let arxivSource = 'latest';
 let hfItems = [];
-const panelUpdatedAt = { latest: 0, hf: 0, scour: 0, trend: 0 };
+const panelUpdatedAt = { latest: 0, hf: 0, saved: 0, scour: 0, trend: 0 };
 const HF_FILTER_PREF_KEY = 'pref_hf_apply_filter';
 let hfApplyFilter = readLocalJson(HF_FILTER_PREF_KEY) === true;
 let hfIndex = new Map();
 let hfRequestVersion = 0;
-const arxivSourceStatus = { latest: null, hf: null };
+const arxivSourceStatus = { latest: null, hf: null, saved: null };
+// Read-later papers stay in chrome.storage.local on this device only.
+const READING_LIST_KEY = 'readingList';
+const MAX_READING_LIST = 200;
+let readingList = [];
+const renderedArxivItems = new Map();
 let previewRequestVersion = 0;
 let avatarRequestVersion = 0;
 
@@ -427,6 +432,7 @@ async function init() {
   void search.refreshSuggestionPermission();
   loadArxivFeed();
   void initHfDaily();
+  void loadReadingList();
   loadScourFeed();
   loadAcademicTrend();
 }
@@ -766,6 +772,8 @@ function updateArxivResearchContext() {
   if (arxivSubtitle) {
     arxivSubtitle.textContent = arxivSource === 'hf'
       ? 'Hugging Face Daily Papers · ranked by upvotes'
+      : arxivSource === 'saved'
+      ? 'Read later · saved on this device'
       : activePreset
       ? `${activePreset.label} · ${arxivCategories.length} feeds`
       : `Custom mix · ${arxivCategories.length || 1} feeds`;
@@ -1227,8 +1235,9 @@ function showArxivSource(source) {
   renderPanelUpdated();
   updateArxivResearchContext();
   const status = arxivSourceStatus[source];
-  const items = source === 'hf' ? hfItems : arxivItems;
-  if (items.length) renderArxivItems({ keepStatus: Boolean(status) });
+  const items = source === 'hf' ? hfItems : source === 'saved' ? readingList : arxivItems;
+  if (source === 'saved') renderArxivItems({ keepStatus: Boolean(status) });
+  else if (items.length) renderArxivItems({ keepStatus: Boolean(status) });
   else if (source === 'hf' || /^Loading/.test(status?.text || '')) renderSkeleton(arxivList, 5);
   else if (status?.retry) renderLatestFailure();
   else renderLatestEmpty();
@@ -1237,7 +1246,7 @@ function showArxivSource(source) {
 
 function selectArxivSource(source, { refresh = false } = {}) {
   if (source !== 'hf') {
-    showArxivSource('latest');
+    showArxivSource(source === 'saved' ? 'saved' : 'latest');
     return;
   }
   // Request immediately from the click call stack so Chrome retains the user gesture.
@@ -1279,6 +1288,7 @@ function formatArxivDate(value) {
 }
 
 function arxivFilterApplies() {
+  if (arxivSource === 'saved') return false;
   return arxivSource !== 'hf' || hfApplyFilter;
 }
 
@@ -1302,13 +1312,103 @@ function countArxivMatches(items) {
   return { filteredCount: filtered.length, totalCount: items.length };
 }
 
-function buildArxivCardActions(hfPaper) {
-  if (!hfPaper) return '';
-  const links = [`<a class="research-card-action" href="${escapeHtml(hfPaper.hfLink)}" target="_blank" rel="noopener" aria-label="Hugging Face discussion, ${hfPaper.upvotes} upvotes">▲ ${hfPaper.upvotes} on HF</a>`];
-  if (hfPaper.githubRepo) {
-    links.push(`<a class="research-card-action" href="${escapeHtml(hfPaper.githubRepo)}" target="_blank" rel="noopener">Code</a>`);
+function buildArxivCardActions(item, hfPaper) {
+  const arxivId = ArxivResearch.extractArxivId(item.link);
+  if (!arxivId) return '';
+  const links = [];
+  if (hfPaper) {
+    links.push(`<a class="research-card-action" href="${escapeHtml(hfPaper.hfLink)}" target="_blank" rel="noopener" aria-label="Hugging Face discussion, ${hfPaper.upvotes} upvotes">▲ ${hfPaper.upvotes} on HF</a>`);
+    if (hfPaper.githubRepo) {
+      links.push(`<a class="research-card-action" href="${escapeHtml(hfPaper.githubRepo)}" target="_blank" rel="noopener">Code</a>`);
+    }
   }
+  const saved = isPaperSaved(item.link);
+  links.push(
+    `<a class="research-card-action" href="https://arxiv.org/pdf/${escapeHtml(arxivId)}" target="_blank" rel="noopener" aria-label="PDF for arXiv ${escapeHtml(arxivId)}">PDF</a>`,
+    `<button type="button" class="research-card-action" data-card-action="bibtex">BibTeX</button>`,
+    `<button type="button" class="research-card-action${saved ? ' active' : ''}" data-card-action="save" aria-pressed="${saved}">${saved ? 'Saved' : 'Save'}</button>`
+  );
   return `<div class="research-card-actions">${links.join('')}</div>`;
+}
+
+function paperKey(link) {
+  return ArxivResearch.extractArxivId(link) || link;
+}
+
+function isPaperSaved(link) {
+  const key = paperKey(link);
+  return readingList.some(item => paperKey(item.link) === key);
+}
+
+function sanitizeReadingList(items) {
+  const seen = new Set();
+  return sanitizeCachedFeed(items).filter(item => {
+    const key = paperKey(item.link);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(item => ({
+    title: item.title, link: item.link, authors: item.authors, description: item.description,
+    pubDate: item.pubDate, category: item.category, savedAt: Number.isFinite(item.savedAt) ? item.savedAt : 0
+  })).slice(0, MAX_READING_LIST);
+}
+
+function renderSavedCount() {
+  const button = document.querySelector('#arxivSourceSwitch [data-source="saved"]');
+  if (button) button.textContent = readingList.length ? `Saved ${readingList.length}` : 'Saved';
+}
+
+function applyReadingList(items) {
+  readingList = sanitizeReadingList(items);
+  renderSavedCount();
+  if (arxivSource === 'saved') showArxivSource('saved');
+  else if (renderedArxivItems.size) renderArxivItems({ keepStatus: true });
+}
+
+async function loadReadingList() {
+  try {
+    const stored = await chrome.storage.local.get(READING_LIST_KEY);
+    arxivSourceStatus.saved = null;
+    applyReadingList(Array.isArray(stored[READING_LIST_KEY]) ? stored[READING_LIST_KEY] : []);
+  } catch (error) {
+    setArxivSourceStatus('saved', 'Could not read saved papers. Try again.', () => void loadReadingList());
+    logEvent('warn', 'Reading list read failed', { error: error.message });
+  }
+}
+
+async function toggleSavedPaper(item) {
+  const previous = readingList;
+  const key = paperKey(item.link);
+  const next = isPaperSaved(item.link)
+    ? previous.filter(saved => paperKey(saved.link) !== key)
+    : [{ title: item.title, link: item.link, authors: item.authors || '', description: item.description || '', pubDate: item.pubDate || '', category: item.category || '', savedAt: Date.now() }, ...previous].slice(0, MAX_READING_LIST);
+  applyReadingList(next);
+  try {
+    await chrome.storage.local.set({ [READING_LIST_KEY]: readingList });
+  } catch (error) {
+    applyReadingList(previous);
+    if (arxivStatus) arxivStatus.textContent = 'Could not update saved papers. Try again.';
+    logEvent('warn', 'Reading list save failed', { error: error.message });
+  }
+}
+
+async function copyPaperBibtex(item, button) {
+  const bibtex = ArxivResearch.buildArxivBibtex(item);
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(bibtex);
+    copied = true;
+  } catch {
+    copied = false;
+  }
+  button.textContent = copied ? 'Copied' : 'Copy failed';
+  button.classList.toggle('error', !copied);
+  if (arxivStatus) arxivStatus.textContent = copied ? 'BibTeX copied to the clipboard.' : 'Could not copy BibTeX. Check clipboard access and try again.';
+  setTimeout(() => {
+    if (!button.isConnected) return;
+    button.textContent = 'BibTeX';
+    button.classList.remove('error');
+  }, 1500);
 }
 
 function renderArxivItems({ keepStatus = false } = {}) {
@@ -1319,11 +1419,18 @@ function renderArxivItems({ keepStatus = false } = {}) {
   arxivFilterInput?.setAttribute('aria-invalid', parsed.ok ? 'false' : 'true');
   if (parsed.ok) lastValidFilter = { query: arxivFilter.trim(), mode: arxivFilterModeValue, ast: parsed.ast };
   const hfMode = arxivSource === 'hf';
+  const savedMode = arxivSource === 'saved';
   const trimmed = arxivFilterApplies() ? lastValidFilter.query : '';
-  const sourceItems = hfMode ? hfItems : arxivItems;
-  const sourceLabel = hfMode ? 'Hugging Face papers' : 'papers';
+  const sourceItems = hfMode ? hfItems : savedMode ? readingList : arxivItems;
+  const sourceLabel = hfMode ? 'Hugging Face papers' : savedMode ? 'saved papers' : 'papers';
   const filtered = filterArxivSourceItems(sourceItems);
   arxivList.innerHTML = '';
+  renderedArxivItems.clear();
+  if (savedMode && filtered.length === 0) {
+    if (!keepStatus) setArxivSourceStatus('saved', 'No saved papers yet.');
+    renderFeedEmpty(arxivList, 'Use Save on any paper to keep it here for later reading.');
+    return { filteredCount: 0, totalCount: 0 };
+  }
   if (filtered.length === 0) {
     if (!keepStatus) setArxivSourceStatus(arxivSource, 'No papers match the filter.');
     renderFeedEmpty(arxivList, trimmed ? 'Try a broader query or clear the current filter.' : 'No papers available yet.',
@@ -1339,12 +1446,14 @@ function renderArxivItems({ keepStatus = false } = {}) {
   }
   visible.forEach((item, index) => {
     const hfPaper = hfMode ? item : hfIndex.get(ArxivResearch.extractArxivId(item.link));
-    const actions = buildArxivCardActions(hfPaper);
+    const actions = buildArxivCardActions(item, hfPaper);
     // Cards with secondary links use a stretched title link to avoid nesting anchors.
     const entry = document.createElement(actions ? 'div' : 'a');
     entry.className = 'panel-item research-card';
     if (actions) {
       entry.classList.add('has-actions');
+      entry.dataset.paperKey = paperKey(item.link);
+      renderedArxivItems.set(entry.dataset.paperKey, item);
     } else {
       entry.href = item.link;
       entry.target = '_blank';
@@ -1356,10 +1465,12 @@ function renderArxivItems({ keepStatus = false } = {}) {
     const matchedTracks = ArxivResearch.matchArxivResearchTracks(item);
     const reason = matchedTracks.length
       ? matchedTracks.map(track => track.label).join(' · ')
-      : (hfMode ? 'Trending on Hugging Face' : 'Custom research filter');
+      : (hfMode ? 'Trending on Hugging Face' : savedMode ? 'Saved for later' : 'Custom research filter');
     const authors = ArxivResearch.formatArxivAuthors(item.authors);
     const meta = hfMode
       ? ['Hugging Face Daily', formatArxivDate(item.pubDate)].filter(Boolean)
+      : savedMode
+      ? ['Saved', item.category, formatArxivDate(item.pubDate)].filter(Boolean)
       : ['arXiv', item.category, ArxivResearch.getArxivAnnounceLabel(item.announceType), formatArxivDate(item.pubDate)].filter(Boolean);
     const title = actions
       ? `<a class="research-card-link" href="${escapeHtml(item.link)}" target="_blank" rel="noopener">${escapeHtml(item.title)}</a>`
@@ -2499,7 +2610,21 @@ document.getElementById('arxivSourceSwitch')?.addEventListener('click', (event) 
 });
 
 document.getElementById('arxivPanelRefreshBtn')?.addEventListener('click', (event) => {
-  void runPanelRefresh(event.currentTarget, () => arxivSource === 'hf' ? loadHfDaily() : loadArxivFeed());
+  void runPanelRefresh(event.currentTarget, () => arxivSource === 'hf' ? loadHfDaily()
+    : arxivSource === 'saved' ? loadReadingList() : loadArxivFeed());
+});
+arxivList?.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-card-action]');
+  const card = button?.closest('[data-paper-key]');
+  const item = card && renderedArxivItems.get(card.dataset.paperKey);
+  if (!item) return;
+  if (button.dataset.cardAction === 'bibtex') void copyPaperBibtex(item, button);
+  else if (button.dataset.cardAction === 'save') void toggleSavedPaper(item);
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[READING_LIST_KEY]) return;
+  const next = Array.isArray(changes[READING_LIST_KEY].newValue) ? changes[READING_LIST_KEY].newValue : [];
+  if (!LaunchPadCore.settingsEqual(next, readingList)) applyReadingList(next);
 });
 document.getElementById('scourPanelRefreshBtn')?.addEventListener('click', (event) => {
   void runPanelRefresh(event.currentTarget, loadScourFeed);

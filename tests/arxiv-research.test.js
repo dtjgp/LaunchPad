@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   ARXIV_RESEARCH_TRACKS,
+  buildArxivBibtex,
   buildArxivResearchPreset,
   buildHfPaperIndex,
   extractArxivId,
@@ -143,4 +144,22 @@ test('shortens long author lists', () => {
   assert.equal(formatArxivAuthors('Ada Lovelace,  Alan Turing'), 'Ada Lovelace, Alan Turing');
   assert.equal(formatArxivAuthors('A, B, C, D'), 'A, B, C et al.');
   assert.equal(formatArxivAuthors(''), '');
+});
+
+test('builds an arXiv BibTeX entry and skips links without an arXiv id', () => {
+  const bibtex = buildArxivBibtex({
+    title: 'Sparse {Edge} Models',
+    link: 'https://arxiv.org/abs/2609.01234v2',
+    authors: 'Ada Lovelace, Alan Turing',
+    pubDate: '2026-09-02T00:00:00Z',
+    category: 'cs.LG'
+  });
+  assert.match(bibtex, /^@misc\{arxiv2609_01234,/);
+  assert.match(bibtex, /title = \{Sparse Edge Models\}/);
+  assert.match(bibtex, /author = \{Ada Lovelace and Alan Turing\}/);
+  assert.match(bibtex, /year = \{2026\}/);
+  assert.match(bibtex, /eprint = \{2609\.01234\}/);
+  assert.match(bibtex, /primaryClass = \{cs\.LG\}/);
+  assert.doesNotMatch(buildArxivBibtex({ title: 'x', link: 'https://arxiv.org/abs/2609.01234', category: 'HF Daily' }), /primaryClass/);
+  assert.equal(buildArxivBibtex({ title: 'x', link: 'https://example.com/paper' }), '');
 });

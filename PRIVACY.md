@@ -7,6 +7,7 @@ LaunchPad is a browser extension that runs locally. It has no LaunchPad account 
 - Shortcuts, app/account links, theme, optional avatar URL, arXiv categories and filters, Scour profile URL, panel preferences and the search-suggestion switch are stored in Chrome extension storage.
 - Settings are written locally first, then to Chrome's sync area. Chrome decides whether that area is synchronized with your signed-in browsers. Sync failure is shown without discarding the successful local save.
 - Feed caches are kept in extension-page local storage. They are tied to their source/category where relevant. Scour preview data is kept in memory for the current page.
+- Papers you save to the Saved list (title, link, authors, abstract, date and category, up to 200) stay in local extension storage on this device and are not synced.
 - A bounded local diagnostic log records source/storage failures. It is not uploaded to the developer.
 
 Avoid putting secrets in shortcut, profile or avatar URLs. Extension settings are not a password manager, and Chrome sync may copy them to other signed-in browsers.
