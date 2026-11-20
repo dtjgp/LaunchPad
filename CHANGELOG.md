@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-11-20
 
+- arXiv: fresher feed, richer paper cards, and PDF, BibTeX and read-later actions with a Saved list.
+- Optional Hugging Face Daily Papers source; HF Hot shows all papers by default with an opt-in topic filter.
+- Each panel has its own refresh button and last-updated time.
+- Academic GitHub Trend: time windows, an area filter, and a GitHub Search fallback with a visible status when OSS Insight is paused upstream.
+- Optional Google account picture (off by default) through `chrome.identity` with the `userinfo.profile` scope, re-checked silently at most once a minute; Disconnect removes the token, picture and permissions.
+- The manifest pins the extension ID `bhppmjiledkmeodkecnbdipllhlabplh`. Upgrading an older unpacked install changes its ID once; see INSTALL.md to keep settings.
 - Search box follows Chrome's new tab searchbox: 56px light pill, voice and Lens targets, and an AI Mode button that opens Google AI Mode with the typed query.
 - Optional Google search suggestions, off by default: a Chrome-style dropdown with keyboard selection. Switching them on requests only `www.google.com`; requests omit cookies, and switching off removes the access.
 - Shortcut tiles use Chrome's new tab tile geometry: 112px tiles, 48px icon circles, single-line titles and translucent hover.
